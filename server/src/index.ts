@@ -48,7 +48,6 @@ pool.connect((err, client, release) => {
 
 // Routes
 app.get('/', (req: Request, res: Response) => {
-	req.log.info('Health check endpoint called');
 	res.send('API is running...');
 });
 
