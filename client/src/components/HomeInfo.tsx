@@ -1,5 +1,5 @@
 ﻿import {Button, Card, Group, Image, Text} from "@mantine/core";
-import {IconBrandGithub} from '@tabler/icons-react';
+import {IconBrandGithub, IconBrandDiscord} from '@tabler/icons-react';
 export default function HomeInfo() {
 	return (
 		<div>
@@ -13,21 +13,30 @@ export default function HomeInfo() {
 
 					<Group justify="center" mt="md" mb="xs">
 						<Button
+							leftSection={<IconBrandGithub size={32} stroke={1.5} color="black" />}
 							component="a"
 							href="https://github.com/Advistane/clogged"
 							target ="_blank"
 						>
-							<IconBrandGithub size={32} stroke={1.5} color="black" />
 							Plugin Source
 						</Button>
 
 						<Button
+							leftSection={<IconBrandGithub size={32} stroke={1.5} color="black" />}
 							component="a"
 							href="https://github.com/Advistane/clogged-server"
 							target ="_blank"
 						>
-							<IconBrandGithub size={32} stroke={1.5} color="black" />
 							Server Source
+						</Button>
+
+						<Button
+							leftSection={<IconBrandDiscord size={32} stroke={1.5} color="black" />}
+							component="a"
+							href="https://github.com/Advistane/clogged-server"
+							target ="_blank"
+						>
+							Clogged.me Discord
 						</Button>
 					</Group>
 				</Card.Section>
