@@ -1,0 +1,158 @@
+﻿services:
+  # PostgreSQL Database
+  db:
+    build: ./database
+    container_name: clogged_db
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Express TypeScript Backend
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.dev
+    container_name: clogged_server
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${APP_DB_USER}
+      DB_PASSWORD: ${APP_DB_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./server:/app/server
+      - /app/server/node_modules
+    command: npm run dev
+
+  # React TypeScript Frontend
+  client:
+    build: ./client
+    container_name: clogged_client
+    restart: always
+    ports:
+      - "5173:5173"
+    depends_on:
+      - server
+    volumes:
+      - ./client:/app/client
+      - /app/client/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true  # Enable hot reload on Windows/Docker
+
+  data-loader:
+    build: ./dumper
+    container_name: clogged_data_loader
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${APP_DB_USER}
+      DB_PASSWORD: ${APP_DB_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.dev
+    container_name: clogged_worker
+    restart: always
+    command: npm run dev:worker
+    environment:
+      NODE_ENV: development
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${APP_DB_USER}
+      DB_PASSWORD: ${APP_DB_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: clogged_redis
+    restart: always
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+
+  loki:
+    image: grafana/loki:3.3.4
+    container_name: loki_dev
+    restart: always
+    ports:
+      - "3100:3100" # Loki API port
+    volumes:
+      - ./loki-config:/etc/loki # Mount configuration
+      - loki_data:/loki         # Mount storage volume
+    command: -config.file=/etc/loki/loki-local-config.yaml
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3100/ready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s # <-- INCREASED from 15s to 30s (or even 45s)
+
+  promtail:
+    image: grafana/promtail:3.5
+    container_name: promtail_dev
+    restart: always
+    volumes:
+      - ./promtail-config:/etc/promtail # Mount configuration
+      - /var/run/docker.sock:/var/run/docker.sock # Mount Docker socket
+    command: -config.file=/etc/promtail/promtail-docker-config.yaml
+    depends_on: # Change depends_on for Loki
+      loki:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:11.6.1
+    container_name: grafana_dev
+    restart: always
+    ports:
+      - "3000:3000" # Grafana UI port
+    volumes:
+      - grafana_data:/var/lib/grafana
+      # Optional: Mount provisioning files for automatic datasource setup
+      - ./grafana-provisioning/datasources:/etc/grafana/provisioning/datasources
+    environment: # Dev-friendly settings
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true # Optional: Skip login for local dev
+    depends_on: # Grafana needs Loki as a datasource
+      - loki
+
+volumes:
+  postgres_data:
+  redis_data:
+  loki_data:
+  grafana_data:

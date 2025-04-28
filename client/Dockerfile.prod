@@ -1,0 +1,46 @@
+﻿# ./client/Dockerfile.prod
+# Builds the React/frontend app and serves it with Nginx
+
+# ---- Builder Stage ----
+# Use a specific Node version for building the frontend
+FROM node:20 AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Copy package.json and lock file
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy the rest of the client source code
+COPY . .
+
+# Build the application for production
+# Make sure your package.json has a "build" script!
+# Common examples: "build": "react-scripts build" or "build": "vite build"
+RUN npm run build
+
+# ---- Production Stage ----
+# Use a lightweight Nginx image
+FROM nginx:alpine
+
+# Nginx configuration:
+# Remove the default Nginx configuration
+RUN rm /etc/nginx/conf.d/default.conf
+# Copy our custom Nginx configuration (see below)
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy the static build output from the builder stage to Nginx's web root
+# IMPORTANT: Adjust '/app/build' or '/app/dist' based on your build tool's output directory!
+# Common outputs: 'build' (Create React App), 'dist' (Vite)
+COPY --from=builder /app/dist /usr/share/nginx/html
+# If your build output is 'dist', use this instead:
+# COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Expose port 80 (the port Nginx listens on inside the container)
+EXPOSE 80
+
+# Start Nginx when the container launches
+CMD ["nginx", "-g", "daemon off;"]

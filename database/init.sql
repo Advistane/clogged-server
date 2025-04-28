@@ -1,0 +1,67 @@
+﻿CREATE USER :"app_db_user" WITH PASSWORD :'app_db_password';
+
+-- Create tables
+CREATE TABLE IF NOT EXISTS npcs
+(
+    id   integer PRIMARY KEY,
+    name text
+);
+
+CREATE TABLE IF NOT EXISTS items
+(
+    id integer PRIMARY KEY,
+    name text
+);
+
+CREATE TABLE IF NOT EXISTS categories
+(
+    id SERIAL PRIMARY KEY,
+    name text UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS subcategories
+(
+    id SERIAL PRIMARY KEY,
+    categoryId INTEGER REFERENCES categories(id),
+    name text UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS collection_logs
+(
+    id SERIAL PRIMARY KEY,
+    accountHash numeric,
+    itemId INTEGER REFERENCES items(id),
+    subcategoryId INTEGER REFERENCES subcategories(id),
+    UNIQUE (accountHash, itemId)
+);
+
+CREATE TABLE IF NOT EXISTS player_kc
+(
+    id SERIAL PRIMARY KEY,
+    accountHash numeric,
+    subcategoryId INTEGER REFERENCES subcategories(id),
+    kc integer,
+    UNIQUE (accountHash, subcategoryId)
+);
+
+CREATE TABLE IF NOT EXISTS players
+(
+    accountHash numeric PRIMARY KEY,
+    username text
+);
+
+-- Add indexes for frequently queried columns
+CREATE INDEX IF NOT EXISTS idx_collection_logs_account_hash ON collection_logs(accountHash);
+CREATE INDEX IF NOT EXISTS idx_collection_logs_subcategory ON collection_logs(subcategoryId);
+CREATE INDEX IF NOT EXISTS idx_players_username ON players(username);
+CREATE INDEX IF NOT EXISTS idx_player_kc_composite ON player_kc(accountHash, subcategoryId);
+
+-- Grant appropriate permissions to application user
+GRANT CONNECT ON DATABASE :"postgres_db" TO :"app_db_user";
+GRANT USAGE ON SCHEMA public TO :"app_db_user";
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :"app_db_user";
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"app_db_user";
+
+-- Make sure new tables will grant permissions to the app user
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"app_db_user";
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO :"app_db_user";
