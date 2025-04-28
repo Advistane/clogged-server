@@ -66,13 +66,14 @@ services:
     networks:
       - app-network
     ports:
-      - "3000:80"
+      - "5173:80"
 
   # Data Loader
   data-loader:
     build: ./dumper
     container_name: clogged_data_loader_prod
-    restart: 'no'
+    restart: "no"
+    profiles: ["tools"]
     environment:
       DB_HOST: db
       DB_PORT: 5432
