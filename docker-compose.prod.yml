@@ -65,6 +65,8 @@ services:
     restart: always
     networks:
       - app-network
+    ports:
+      - "3000:80"
 
   # Data Loader
   data-loader:
