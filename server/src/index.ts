@@ -8,6 +8,8 @@ import {createClogRouter} from "./routes/clog";
 import logger from './utils/logger';
 import {pinoHttp} from "pino-http";
 
+import {redisConnection} from "./queue";
+
 dotenv.config();
 
 const app = express();
@@ -57,6 +59,23 @@ pool.connect((err, client, release) => {
 // Routes
 app.get('/', (req: Request, res: Response) => {
 	res.send('API is running...');
+});
+
+// In your Express app (server.ts or similar)
+app.get('/healthz', async (req, res) => {
+	const client = await pool.connect();
+	try {
+		// Check DB connection (e.g., run a simple query like 'SELECT 1')
+		await client.query('SELECT 1'); // Replace with your actual DB client method
+		// Check Redis connection (e.g., run a PING command)
+		await redisConnection.ping(); // Replace with your actual Redis client method
+		res.status(200).send('OK');
+	} catch (error) {
+		console.error('Health check failed:', error);
+		res.status(503).send('Service Unavailable'); // 503 Service Unavailable
+	} finally {
+		client.release();
+	}
 });
 
 // Use the NPCs router for /api/npcs routes
