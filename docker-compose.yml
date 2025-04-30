@@ -47,21 +47,6 @@
       - /app/server/node_modules
     command: npm run dev
 
-  # React TypeScript Frontend
-  client:
-    build: ./client
-    container_name: clogged_client
-    restart: always
-    ports:
-      - "5173:5173"
-    depends_on:
-      - server
-    volumes:
-      - ./client:/app/client
-      - /app/client/node_modules
-    environment:
-      - CHOKIDAR_USEPOLLING=true  # Enable hot reload on Windows/Docker
-
   data-loader:
     build: ./dumper
     container_name: clogged_data_loader

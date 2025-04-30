@@ -50,26 +50,6 @@ services:
       start_period: 10s
     networks:
       - app-network
-    # deploy: # Optional resource limits
-    #   resources:
-    #     limits:
-    #       cpus: '0.50'
-    #       memory: 512M
-
-  # React Client served by Nginx
-  client:
-    build:
-      context: ./client
-      dockerfile: Dockerfile.prod
-    container_name: clogged_client_prod
-    restart: always
-    networks:
-      - app-network
-    ports:
-      - "5173:80"
-    depends_on:
-      server:
-        condition: service_healthy
 
   # Data Loader
   data-loader:
