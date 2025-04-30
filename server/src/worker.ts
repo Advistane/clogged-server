@@ -1,6 +1,6 @@
 ﻿// server/src/worker.ts (New File)
 import { Worker, Job } from 'bullmq';
-import { Pool } from 'pg';
+import {Pool, PoolClient} from 'pg';
 import IORedis from 'ioredis';
 import dotenv from 'dotenv';
 import logger from './utils/logger'; // Import your logger
@@ -43,6 +43,35 @@ pool.connect((err, client, release) => {
 	release();
 });
 
+async function getOrCreateCategory(client: PoolClient, categoryName: string) {
+	// 1. Attempt the insert with DO NOTHING
+	const insertRes = await client.query(
+		`INSERT INTO categories (name)
+     VALUES ($1)
+     ON CONFLICT (name) DO NOTHING
+     RETURNING id;`,
+		[categoryName]
+	);
+
+	// 2. Check if the insert happened and returned an ID
+	if (insertRes.rows.length > 0) {
+		return insertRes.rows[0].id; // Return the newly inserted ID
+	} else {
+		// 3. If DO NOTHING occurred, select the ID of the existing row
+		const selectRes = await client.query(
+			`SELECT id FROM categories WHERE name = $1;`,
+			[categoryName]
+		);
+		if (selectRes.rows.length > 0) {
+			return selectRes.rows[0].id; // Return the existing ID
+		} else {
+			// This case should ideally not happen if the logic is sound,
+			// but handle potential race conditions or errors.
+			throw new Error("Failed to get or create category ID.");
+		}
+	}
+}
+
 
 // --- Define the Job Processing Function ---
 const processClogUpdate = async (job: Job) => {
@@ -75,17 +104,9 @@ const processClogUpdate = async (job: Job) => {
 				continue;
 			}
 
-			// Insert category if it doesn't exist, get its ID
-			// ON CONFLICT (name) DO UPDATE is used to ensure RETURNING id always works, even if the row exists.
-			const categoryInsertQuery = `
-                    INSERT INTO categories (name)
-                    VALUES ($1)
-                    ON CONFLICT (name) DO NOTHING
-                    RETURNING id;
-				`;
 			try {
-				const categoryResult = await client.query(categoryInsertQuery, [categoryName]);
-				const categoryId = categoryResult.rows[0].id;
+				const categoryId = await getOrCreateCategory(client, categoryName);
+
 				categoryIdMap.set(categoryName, categoryId); // Store for subcategory insertion
 				log.debug(`Upserted category '${categoryName}', ID: ${categoryId}`);
 
