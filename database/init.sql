@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS player_kc
 
 CREATE TABLE IF NOT EXISTS players
 (
-    accountHash numeric PRIMARY KEY,
+    accountHash bigint PRIMARY KEY,
     username text
 );
 
@@ -59,9 +59,9 @@ CREATE INDEX IF NOT EXISTS idx_player_kc_composite ON player_kc(accountHash, sub
 -- Grant appropriate permissions to application user
 GRANT CONNECT ON DATABASE :"postgres_db" TO :"app_db_user";
 GRANT USAGE ON SCHEMA public TO :"app_db_user";
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :"app_db_user";
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO :"app_db_user";
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"app_db_user";
 
 -- Make sure new tables will grant permissions to the app user
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"app_db_user";
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO :"app_db_user";
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO :"app_db_user";

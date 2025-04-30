@@ -80,7 +80,7 @@ const processClogUpdate = async (job: Job) => {
 			const categoryInsertQuery = `
                     INSERT INTO categories (name)
                     VALUES ($1)
-                    ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+                    ON CONFLICT (name) DO NOTHING
                     RETURNING id;
 				`;
 			try {
@@ -105,7 +105,7 @@ const processClogUpdate = async (job: Job) => {
 					const subCategoryInsertQuery = `
                             INSERT INTO subcategories (id, categoryId, name)
                             VALUES ($1, $2, $3)
-                            ON CONFLICT (id) DO NOTHING; -- Ignore if subcategory ID already exists
+                            ON CONFLICT DO NOTHING; -- Ignore if subcategory ID already exists
 						`;
 					await client.query(subCategoryInsertQuery, [subcategoryIdFromJson, categoryId, subcategoryName]);
 

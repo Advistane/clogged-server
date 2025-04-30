@@ -33,7 +33,7 @@ export default function HomeInfo() {
 						<Button
 							leftSection={<IconBrandDiscord size={32} stroke={1.5} color="black" />}
 							component="a"
-							href="https://github.com/Advistane/clogged-server"
+							href="https://discord.gg/jVqBpUKBJb"
 							target ="_blank"
 						>
 							Clogged.me Discord
