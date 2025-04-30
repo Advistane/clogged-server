@@ -16,7 +16,7 @@ const httpLogger = pinoHttp({
 	logger,
 	autoLogging: {
 		ignore: (req) => {
-			return req.url === '/health';
+			return req.url === '/';
 		}
 	}
 });
@@ -55,7 +55,7 @@ pool.connect((err, client, release) => {
 });
 
 // Routes
-app.get('/health', (req: Request, res: Response) => {
+app.get('/', (req: Request, res: Response) => {
 	res.send('API is running...');
 });
 
