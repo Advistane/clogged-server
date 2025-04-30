@@ -1,6 +1,7 @@
 ﻿import {Router} from 'express';
 import {Pool} from 'pg';
 import {clogUpdateQueue, redisConnection} from "../queue";
+import {Job} from "bullmq";
 
 export interface Kc {
 	kc: number;
@@ -38,16 +39,15 @@ export const createClogRouter = (pool: Pool) => {
 
 		try {
 			// --- 3. Add Job to Queue ---
-			// Use accountHash as job ID for potential deduplication or tracking
-			const jobId = `clog-update-${accountHash}`;
-			await clogUpdateQueue.add('clog-update-job', jobPayload, { jobId }); // Job name + payload
+			const job: Job = await clogUpdateQueue.add('clog-update-job', jobPayload); // Job name + payload
+			const generatedJobId = job.id;
 
-			req.log.info({ jobId, accountHash }, 'Clog update job added to queue');
+			req.log.info({ generatedJobId, accountHash }, 'Clog update job added to queue');
 
 			// --- 4. Respond Immediately ---
 			return res.status(202).json({
 				message: 'Update request received and queued for processing.',
-				jobId: jobId // Optionally return job ID for tracking
+				jobId: generatedJobId
 			});
 
 		} catch (queueError) {
