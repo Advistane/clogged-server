@@ -3,7 +3,7 @@ import {Pool} from 'pg';
 import {clogUpdateQueue, redisConnection} from "../queue";
 import {Job} from "bullmq";
 import {UserCollectionData} from "../models/UpdateCollectionLogRequest";
-import {getSubcategoryAlias} from "../utils/alias";
+import {getKCLookupAliases, getSubcategoryAlias} from "../utils/alias";
 import {StaticDataRequest} from "../models/UpdateCollectionLogStaticDataRequest";
 export interface Kc {
 	kc: number;
@@ -20,6 +20,31 @@ export const createClogRouter = (pool: Pool) => {
 	const router = Router();
 
 	const SECRET_KEY = process.env.ENDPOINT_SECRET_KEY;
+
+	const authenticateApiKey: RequestHandler = (req, res, next) => {
+		const providedKey = req.headers['x-api-key'] as string | undefined;
+
+		if (!SECRET_KEY) {
+			req.log.error("Authentication check skipped: ENDPOINT_SECRET_KEY is not configured on the server.");
+			res.status(500).json({ error: "Server configuration error." });
+			return;
+		}
+
+		if (!providedKey) {
+			req.log.warn("Access denied: Missing X-API-Key header.");
+			res.status(401).json({ error: "Unauthorized: Missing API Key." });
+			return;
+		}
+
+		if (providedKey === SECRET_KEY) {
+			req.log.info("API Key authenticated successfully.");
+			return next(); // This is already void-returning
+		} else {
+			req.log.warn("Access denied: Invalid API Key provided.");
+			res.status(403).json({ error: "Forbidden: Invalid API Key." });
+			return;
+		}
+	};
 
 	// Get all items
 	router.post('/update', async (req, res): Promise<any> => {
@@ -63,7 +88,86 @@ export const createClogRouter = (pool: Pool) => {
 		}
 	});
 
-	router.get('/get/:username/:subcategoryName', async (req, res): Promise<any> => {
+	router.post('/static-data', authenticateApiKey, async (req: Request, res: Response) => {
+		// If the code reaches here, authenticateApiKey called next(), meaning the key was valid.
+		const data = req.body as StaticDataRequest;
+
+		// --- Data Validation (Basic Example) ---
+		if (!data || !Array.isArray(data.subcategories) || !Array.isArray(data.categories) || data.categories === null) {
+			req.log.error('Invalid data format received post-authentication.');
+			// Note: Authentication succeeded, but the body is wrong.
+			res.status(400).json({ error: 'Invalid data format...' });
+			return;
+		}
+
+		// --- Process the Data ---
+		req.log.info(`Processing authenticated request. Received ${data.subcategories.length} subcategories.`);
+		req.log.info(`Received ${Object.keys(data.categories).length} categories.`);
+
+		const client = await pool.connect();
+
+		try {
+			await client.query('BEGIN'); // Start transaction
+			req.log.debug('Transaction started.');
+
+			req.log.info('Inserting categories...');
+			for (const category of data.categories) {
+				const categoryId = category.id;
+				const categoryName = category.name;
+
+				const insertCategoryQuery = `
+						INSERT INTO categories (id, name)
+						VALUES ($1, $2)
+						ON CONFLICT DO NOTHING;
+					`;
+				await client.query(insertCategoryQuery, [categoryId, categoryName]);
+			}
+			await client.query('COMMIT'); // Commit transaction
+
+			for (const subcategory of data.subcategories) {
+				req.log.info(`Inserting subcategory ${subcategory.name}...`);
+				const insertSubcategoryQuery = `
+					INSERT INTO subcategories (id, name, categoryId)
+					VALUES ($1, $2, $3)
+					ON CONFLICT DO NOTHING;
+				`;
+				await client.query(insertSubcategoryQuery, [
+					subcategory.id,
+					subcategory.name,
+					subcategory.categoryId,
+				]);
+				await client.query('COMMIT');
+
+				for (const item in subcategory.items) {
+					const itemId = subcategory.items[item];
+					const insertItemQuery = `
+						INSERT INTO subcategory_items (subcategoryid, itemid)
+						VALUES ($1, $2)
+						ON CONFLICT DO NOTHING;
+					`;
+					await client.query(insertItemQuery, [subcategory.id, itemId]);
+				}
+			}
+			await client.query('COMMIT'); // Commit transaction
+
+		} catch (err) {
+			req.log.error(err, 'Error processing data');
+			res.status(500).json({ error: 'Server error' });
+			return;
+		} finally {
+			client.release();
+			req.log.debug('Database client released');
+		}
+
+		// --- Send Response ---
+		res.status(200).json({
+			message: 'Data received and processed successfully!',
+			receivedSubcategories: data.subcategories.length,
+			receivedCategories: Object.keys(data.categories).length,
+		});
+	});
+
+	router.get('/:username/:subcategoryName', async (req, res): Promise<any> => {
 		const username: string = decodeURIComponent(req.params.username);
 		const subcategoryName: string = req.params.subcategoryName;
 		const subcategoryAliased: string = getSubcategoryAlias(subcategoryName);
@@ -163,108 +267,14 @@ export const createClogRouter = (pool: Pool) => {
 		}
 	});
 
-	const authenticateApiKey: RequestHandler = (req, res, next) => {
-		const providedKey = req.headers['x-api-key'] as string | undefined;
-
-		if (!SECRET_KEY) {
-			req.log.error("Authentication check skipped: ENDPOINT_SECRET_KEY is not configured on the server.");
-			res.status(500).json({ error: "Server configuration error." });
-			return;
-		}
-
-		if (!providedKey) {
-			req.log.warn("Access denied: Missing X-API-Key header.");
-			res.status(401).json({ error: "Unauthorized: Missing API Key." });
-			return;
-		}
-
-		if (providedKey === SECRET_KEY) {
-			req.log.info("API Key authenticated successfully.");
-			return next(); // This is already void-returning
-		} else {
-			req.log.warn("Access denied: Invalid API Key provided.");
-			res.status(403).json({ error: "Forbidden: Invalid API Key." });
-			return;
-		}
-	};
-
-	router.post('/data', authenticateApiKey, async (req: Request, res: Response) => {
-		// If the code reaches here, authenticateApiKey called next(), meaning the key was valid.
-		const data = req.body as StaticDataRequest;
-
-		// --- Data Validation (Basic Example) ---
-		if (!data || !Array.isArray(data.subcategories) || !Array.isArray(data.categories) || data.categories === null) {
-			req.log.error('Invalid data format received post-authentication.');
-			// Note: Authentication succeeded, but the body is wrong.
-			res.status(400).json({ error: 'Invalid data format...' });
-			return;
-		}
-
-		// --- Process the Data ---
-		req.log.info(`Processing authenticated request. Received ${data.subcategories.length} subcategories.`);
-		req.log.info(`Received ${Object.keys(data.categories).length} categories.`);
-
-		const client = await pool.connect();
-
+	router.get('/kc-aliases', async (req, res): Promise<any> => {
 		try {
-			await client.query('BEGIN'); // Start transaction
-			req.log.debug('Transaction started.');
-
-			req.log.info('Inserting categories...');
-			for (const category of data.categories) {
-				const categoryId = category.id;
-				const categoryName = category.name;
-
-				const insertCategoryQuery = `
-						INSERT INTO categories (id, name)
-						VALUES ($1, $2)
-						ON CONFLICT DO NOTHING;
-					`;
-				await client.query(insertCategoryQuery, [categoryId, categoryName]);
-			}
-			await client.query('COMMIT'); // Commit transaction
-
-			for (const subcategory of data.subcategories) {
-				req.log.info(`Inserting subcategory ${subcategory.name}...`);
-				const insertSubcategoryQuery = `
-					INSERT INTO subcategories (id, name, categoryId)
-					VALUES ($1, $2, $3)
-					ON CONFLICT DO NOTHING;
-				`;
-				await client.query(insertSubcategoryQuery, [
-					subcategory.id,
-					subcategory.name,
-					subcategory.categoryId,
-				]);
-				await client.query('COMMIT');
-
-				for (const item in subcategory.items) {
-					const itemId = subcategory.items[item];
-					const insertItemQuery = `
-						INSERT INTO subcategory_items (subcategoryid, itemid)
-						VALUES ($1, $2)
-						ON CONFLICT DO NOTHING;
-					`;
-					await client.query(insertItemQuery, [subcategory.id, itemId]);
-				}
-			}
-			await client.query('COMMIT'); // Commit transaction
-
-		} catch (err) {
-			req.log.error(err, 'Error processing data');
-			res.status(500).json({ error: 'Server error' });
-			return;
-		} finally {
-			client.release();
-			req.log.debug('Database client released');
+			const aliases = getKCLookupAliases();
+			res.status(200).json(aliases);
+		} catch (error) {
+			req.log.error(error, 'Failed to fetch KC lookup aliases');
+			res.status(500).json({ error: 'Failed to fetch KC lookup aliases' });
 		}
-
-		// --- Send Response ---
-		res.status(200).json({
-			message: 'Data received and processed successfully!',
-			receivedSubcategories: data.subcategories.length,
-			receivedCategories: Object.keys(data.categories).length,
-		});
 	});
 
 	return router;

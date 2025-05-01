@@ -572,3 +572,38 @@
 		);
 	}
 }
+
+export function getKCLookupAliases() {
+	const aliases = {
+		// Brimhaven Agility Arena
+		"brimhaven agility arena": "Agility Arena",
+
+		// Ape Atoll Agility Course
+		"monkey backpacks": "Ape Atoll Agility",
+
+		// Barbarian Outpost
+		"barbarian assault": "Barbarian Outpost",
+
+		// dks
+		"prime": "Dagannoth Prime",
+		"rex": "Dagannoth Rex",
+		"supreme": "Dagannoth Supreme",
+
+		// hunter rumour variants
+		"hunter guild": "Hunter Rumours",
+
+		// lunar chest variants
+		"moons of peril": "Lunar Chest",
+
+		// sol heredit
+		"fortis colosseum": "Sol Heredit",
+
+		"the inferno": "TzKal-Zuk",
+		"the fight caves": "TzTok-Jad"
+	}
+
+	return Object.entries(aliases).map(([alias, fullName]) => ({
+		alias,
+		fullName,
+	}));
+}
