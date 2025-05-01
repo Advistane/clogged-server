@@ -37,6 +37,7 @@ services:
       DB_USER: ${APP_DB_USER}
       DB_PASSWORD: ${APP_DB_PASSWORD}
       DB_NAME: ${POSTGRES_DB}
+      ENDPOINT_SECRET_KEY: ${ENDPOINT_SECRET_KEY}
     depends_on:
       db:
         condition: service_healthy
