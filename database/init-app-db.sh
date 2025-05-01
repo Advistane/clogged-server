@@ -46,28 +46,45 @@ CREATE TABLE IF NOT EXISTS subcategories
     name text UNIQUE
 );
 
-CREATE TABLE IF NOT EXISTS collection_logs
+CREATE TABLE IF NOT EXISTS subcategory_items
 (
     id SERIAL PRIMARY KEY,
-    accountHash numeric,
     itemId INTEGER REFERENCES items(id),
     subcategoryId INTEGER REFERENCES subcategories(id),
-    UNIQUE (accountHash, itemId)
-);
-
-CREATE TABLE IF NOT EXISTS player_kc
-(
-    id SERIAL PRIMARY KEY,
-    accountHash numeric,
-    subcategoryId INTEGER REFERENCES subcategories(id),
-    kc integer,
-    UNIQUE (accountHash, subcategoryId)
+    UNIQUE (itemId, subcategoryId)
 );
 
 CREATE TABLE IF NOT EXISTS players
 (
     accountHash numeric PRIMARY KEY,
     username text
+);
+
+CREATE TABLE IF NOT EXISTS player_items
+(
+    id SERIAL PRIMARY KEY,
+    accountHash numeric REFERENCES players(accountHash),
+    itemId INTEGER REFERENCES items(id),
+    quantity integer,
+    UNIQUE (accountHash, itemId)
+);
+
+CREATE TABLE IF NOT EXISTS player_kc
+(
+    id SERIAL PRIMARY KEY,
+    accountHash numeric REFERENCES players(accountHash),
+    subcategoryId INTEGER REFERENCES subcategories(id),
+    kc integer,
+    UNIQUE (accountHash, subcategoryId)
+);
+
+CREATE TABLE IF NOT EXISTS collection_logs
+(
+    id SERIAL PRIMARY KEY,
+    accountHash numeric REFERENCES players(accountHash),
+    itemId INTEGER REFERENCES items(id),
+    subcategoryId INTEGER REFERENCES subcategories(id),
+    UNIQUE (accountHash, itemId)
 );
 
 -- Add indexes for frequently queried columns
