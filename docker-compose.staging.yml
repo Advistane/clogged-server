@@ -101,6 +101,21 @@ services:
     networks:
       - app-network-staging
 
+  cloudbeaver:
+    image: dbeaver/cloudbeaver:25
+    container_name: cloudbeaver_staging
+    restart: always
+    ports:
+      - "8978:8978" # Map host port 8978 to container port 8978
+    volumes:
+      - cloudbeaver_data_staging:/opt/cloudbeaver/workspace # Persist workspace data
+    depends_on:
+      db:
+        condition: service_healthy # Wait for the database to be ready
+    networks:
+      - app-network-staging # Connect to the same network as the db
+
+
 networks:
   app-network-staging:
     driver: bridge
