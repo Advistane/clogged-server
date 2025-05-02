@@ -1,0 +1,25 @@
+name: Deploy to DigitalOcean Staging
+
+on:
+  push:
+    branches:
+      - staging # Trigger deployment on push to the main branch
+
+jobs:
+  deploy:
+    name: Deploy to DO Droplet
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code # Checks out the repo code in the runner
+      uses: actions/checkout@v4
+
+    - name: Deploy to Server
+      uses: appleboy/ssh-action@v1.0.3 # Use latest stable version
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          cd /home/${{ secrets.SSH_USER }}/clogged-server
+          ./deploy.sh # Execute the deployment script
