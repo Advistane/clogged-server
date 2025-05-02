@@ -1,25 +1,42 @@
-name: Deploy to DigitalOcean Staging
+name: Deploy Clogged App
 
 on:
   push:
     branches:
-      - staging # Trigger deployment on push to the main branch
+      - main     # Trigger on push to main (for production)
+      - staging  # Trigger on push to staging
 
 jobs:
   deploy:
-    name: Deploy to DO Droplet
+    # Job name is dynamic based on the branch
+    name: Deploy to ${{ github.ref_name == 'main' && 'Production' || 'Staging' }}
     runs-on: ubuntu-latest
 
-    steps:
-    - name: Checkout code # Checks out the repo code in the runner
-      uses: actions/checkout@v4
+    # Select the GitHub Environment based on the branch triggering the workflow
+    environment:
+      name: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+      # url: Optional: Can set a URL based on the environment for deployment status checks
 
-    - name: Deploy to Server
-      uses: appleboy/ssh-action@v1.0.3 # Use latest stable version
-      with:
-        host: ${{ secrets.SSH_HOST }}
-        username: ${{ secrets.SSH_USER }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        script: |
-          cd /home/${{ secrets.SSH_USER }}/clogged-server
-          ./deploy.sh # Execute the deployment script
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        # Ensure full history is fetched if needed by deploy script (usually not needed for reset --hard)
+        # with:
+        #   fetch-depth: 0
+
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@v1.2.2 # Or latest version
+        with:
+          # These secrets are now automatically sourced from the selected GitHub Environment
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # Pass environment-specific info and branch name to the deploy script
+          script: |
+            export DEPLOY_BRANCH=${{ github.ref_name }}
+            export COMPOSE_FILE_NAME=${{ vars.COMPOSE_FILE_NAME }} # Read variable from Environment
+            export APP_DEPLOY_PATH=${{ vars.DEPLOY_PATH }}         # Read variable from Environment
+            
+            echo "Executing deployment script on $host for branch $DEPLOY_BRANCH"
+            cd $APP_DEPLOY_PATH
+            ./deploy.sh # Execute the deployment script
