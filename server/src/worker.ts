@@ -1,13 +1,12 @@
-﻿// server/src/worker.ts (New File)
-import { Worker, Job } from 'bullmq';
-import {Pool, PoolClient} from 'pg';
+﻿import { Worker, Job } from 'bullmq';
+import {Pool} from 'pg';
 import IORedis from 'ioredis';
 import dotenv from 'dotenv';
-import logger from './utils/logger'; // Import your logger
+import logger from './utils/logger';
+import {UserCollectionData} from "./models/UpdateCollectionLogRequest";
 
 dotenv.config();
 
-// --- Reuse Redis Connection Logic (or import from queue.ts) ---
 const redisHost = process.env.REDIS_HOST || 'localhost';
 const redisPort = parseInt(process.env.REDIS_PORT || '6379', 10);
 const redisConnection = new IORedis(redisPort, redisHost, {
@@ -24,15 +23,14 @@ const pool = new Pool({
 	user: process.env.DB_USER,
 	password: process.env.DB_PASSWORD,
 	database: process.env.DB_NAME,
-	max: 10, // Worker might need fewer connections than the API server
+	max: 10,
 	connectionTimeoutMillis: 5000,
 	idleTimeoutMillis: 10000,
-	statement_timeout: 30000, // Give worker potentially more time for statements
+	statement_timeout: 10000,
 });
 
 pool.on('error', (err) => {
 	logger.error('Worker DB pool error', err);
-	// Maybe don't exit immediately, allow BullMQ retries?
 });
 
 pool.connect((err, client, release) => {
@@ -43,42 +41,10 @@ pool.connect((err, client, release) => {
 	release();
 });
 
-async function getOrCreateCategory(client: PoolClient, categoryName: string) {
-	// 1. Attempt the insert with DO NOTHING
-	const insertRes = await client.query(
-		`INSERT INTO categories (name)
-     VALUES ($1)
-     ON CONFLICT (name) DO NOTHING
-     RETURNING id;`,
-		[categoryName]
-	);
-
-	// 2. Check if the insert happened and returned an ID
-	if (insertRes.rows.length > 0) {
-		return insertRes.rows[0].id; // Return the newly inserted ID
-	} else {
-		// 3. If DO NOTHING occurred, select the ID of the existing row
-		const selectRes = await client.query(
-			`SELECT id FROM categories WHERE name = $1;`,
-			[categoryName]
-		);
-		if (selectRes.rows.length > 0) {
-			return selectRes.rows[0].id; // Return the existing ID
-		} else {
-			// This case should ideally not happen if the logic is sound,
-			// but handle potential race conditions or errors.
-			throw new Error("Failed to get or create category ID.");
-		}
-	}
-}
-
-
-// --- Define the Job Processing Function ---
-const processClogUpdate = async (job: Job) => {
-	const { username, accountHash, collectedIds, categories } = job.data;
+const processClogUpdate = async (job: Job<UserCollectionData>) => {
+	const { username, accountHash, collectedItems, subcategories } = job.data;
 	const log = logger.child({ jobId: job.id, accountHash, username }); // Contextual logger
-
-	log.info(`Processing clog update job started`);
+	log.info(`Processing clog update job started`, job.data);
 
 	const client = await pool.connect();
 	log.debug('Worker acquired DB client.');
@@ -93,119 +59,45 @@ const processClogUpdate = async (job: Job) => {
 			`;
 		await client.query(playerInsertQuery, [accountHash, username]);
 
-		// 1. Process Categories and Subcategories
-		log.info(`Processing ${categories.length} categories...`);
-		const categoryIdMap = new Map(); // To store categoryName -> categoryId mapping
+		log.info(`Processing collected items for accountHash: ${accountHash}...`);
+		for (const collectedItem of collectedItems) {
+			const itemId = collectedItem.id;
+			let quantity = collectedItem.quantity;
+			if (!itemId) {
+				log.warn(`Skipping collected item due to missing id or quantity: ${JSON.stringify(collectedItem)}`);
+				continue;
+			}
+			if (!quantity || quantity < 0) {
+				quantity = -1;
+			}
+			const itemInsertQuery = `
+					INSERT INTO player_items (accountHash, itemid, quantity)
+					VALUES ($1, $2, $3)
+					ON CONFLICT (accountHash, itemid) DO UPDATE SET quantity = EXCLUDED.quantity;
+				`;
+			await client.query(itemInsertQuery, [accountHash, itemId, quantity]);
+		}
 
-		for (const category of categories) {
-			const categoryName = category.categoryName;
-			if (!categoryName || !Array.isArray(category.subCategories)) {
-				log.debug(`Skipping category due to missing name or subCategories: ${JSON.stringify(category)}`);
+		log.info(`Processing subcategory ids for accountHash: ${accountHash}...`);
+		for (const subcategory of subcategories) {
+			const subcategoryId = subcategory.id;
+			let kc = subcategory.kc;
+			log.info(`Processing subcategory: ${JSON.stringify(subcategory)} `);
+			if (!subcategoryId) {
+				log.warn(`Skipping collected item due to missing id: ${JSON.stringify(subcategory)}`);
 				continue;
 			}
 
-			try {
-				const categoryId = await getOrCreateCategory(client, categoryName);
-
-				categoryIdMap.set(categoryName, categoryId); // Store for subcategory insertion
-				log.debug(`Upserted category '${categoryName}', ID: ${categoryId}`);
-
-				// Insert subcategories for the current category
-				for (const subCategory of category.subCategories) {
-					const subcategoryIdFromJson = subCategory.subcategoryId; // ID from the JSON file
-					const subcategoryName = subCategory.subcategoryName;
-					const subcategoryKc = subCategory.kc || -1;
-
-					if (typeof subcategoryIdFromJson !== 'number' || !subcategoryName) {
-						log.warn(`Skipping subcategory due to missing id or name: ${JSON.stringify(subCategory)}`);
-						continue;
-					}
-
-					// Insert subcategory using the ID from the JSON as the primary key
-					// Assumes 'id' in subcategories table is the primary key and corresponds to subcategoryIdFromJson
-					const subCategoryInsertQuery = `
-                            INSERT INTO subcategories (id, categoryId, name)
-                            VALUES ($1, $2, $3)
-                            ON CONFLICT DO NOTHING; -- Ignore if subcategory ID already exists
-						`;
-					await client.query(subCategoryInsertQuery, [subcategoryIdFromJson, categoryId, subcategoryName]);
-
-					const kcInsertQuery = `
-							INSERT INTO player_kc (accountHash, subcategoryId, kc)
-							VALUES ($1, $2, $3)
-							ON CONFLICT (accountHash, subcategoryId) DO UPDATE SET kc = EXCLUDED.kc;
-						`;
-					await client.query(kcInsertQuery, [accountHash, subcategoryIdFromJson, subcategoryKc]);
-				}
-			} catch (catErr) {
-				log.error(`Error processing category '${categoryName}':`, catErr);
-				throw catErr; // Re-throw to trigger rollback
+			if (!kc || kc < 0) {
+				kc = -1;
 			}
-		}
-		log.info('Finished processing categories and subcategories.');
 
-		// 2. Process Collected Items
-		log.info(`Processing collected items for accountHash: ${accountHash}...`);
-		const collectedItemsData = [];
-		for (const subcategoryIdStr in collectedIds) {
-			// Ensure the key is actually a property of the object
-			if (Object.prototype.hasOwnProperty.call(collectedIds, subcategoryIdStr)) {
-				const subcategoryId = parseInt(subcategoryIdStr, 10);
-				const itemIds = collectedIds[subcategoryIdStr];
-
-				if (isNaN(subcategoryId) || !Array.isArray(itemIds)) {
-					log.warn(`Skipping invalid collectedIds entry. Key: ${subcategoryIdStr}, Value: ${JSON.stringify(itemIds)}`);
-					continue;
-				}
-
-				for (const itemId of itemIds) {
-					if (typeof itemId === 'number') {
-						collectedItemsData.push({accountHash, subcategoryId, itemId});
-					} else {
-						log.warn(`Skipping invalid itemId for subcategoryId ${subcategoryId}: ${JSON.stringify(itemId)}`);
-					}
-				}
-			}
-		}
-
-		// Bulk insert collected items using a single query for efficiency
-		if (collectedItemsData.length > 0) {
-			log.info(`Preparing to insert ${collectedItemsData.length} collected items...`);
-			const valuesPlaceholders = collectedItemsData.map((_, index) =>
-				`($${index * 3 + 1}, $${index * 3 + 2}, $${index * 3 + 3})`
-			).join(',');
-
-			// Additional type validation
-			const flatValues = collectedItemsData.flatMap(item => {
-				// Ensure all values are numbers
-				const accountHashNum = Number(item.accountHash);
-				const subcategoryIdNum = Number(item.subcategoryId);
-				const itemIdNum = Number(item.itemId);
-
-				if (isNaN(accountHashNum) || isNaN(subcategoryIdNum) || isNaN(itemIdNum)) {
-					throw new Error('Invalid numeric value in collected items data');
-				}
-
-				return [accountHashNum, subcategoryIdNum, itemIdNum];
-			});
-
-			const collectedItemsInsertQuery = `
-					INSERT INTO collection_logs (accountHash, subcategoryId, itemId)
-					VALUES
-					${valuesPlaceholders}
-					ON CONFLICT (accountHash, itemId)
-					DO NOTHING;
+			const itemInsertQuery = `
+					INSERT INTO player_kc (accountHash, subcategoryid, kc)
+					VALUES ($1, $2, $3)
+					ON CONFLICT (accountHash, subcategoryid) DO UPDATE SET kc = EXCLUDED.kc;
 				`;
-
-			try {
-				await client.query(collectedItemsInsertQuery, flatValues);
-			} catch (itemErr) {
-				log.error(`Error inserting collected items:`, itemErr);
-				throw itemErr; // Re-throw to trigger rollback
-			}
-
-		} else {
-			log.warn('No valid collected items found to insert.');
+			await client.query(itemInsertQuery, [accountHash, subcategoryId, kc]);
 		}
 
 		await client.query('COMMIT'); // Commit transaction
@@ -223,10 +115,10 @@ const processClogUpdate = async (job: Job) => {
 		} catch (rollbackErr) {
 			log.error(rollbackErr, 'Failed to rollback worker transaction');
 		}
-		// Re-throw the error so BullMQ knows the job failed and can retry
+
 		throw err;
 	} finally {
-		client.release(); // ALWAYS release the client
+		client.release();
 		log.debug('Worker released DB client.');
 	}
 };

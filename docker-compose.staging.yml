@@ -1,0 +1,144 @@
+﻿version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v3.3.6
+    container_name: traefik_staging
+    restart: always
+    command:
+      - "--api.insecure=true" # Enables the dashboard
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false" # Only expose services with labels
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure" # Redirect HTTP to HTTPS
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.myresolver.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/traefik/letsencrypt:/letsencrypt
+    networks:
+      - app-network-staging
+
+  db:
+    build: ./database
+    container_name: clogged_db_staging
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+    volumes:
+      - postgres_data_staging:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network-staging
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.prod
+    container_name: clogged_server_staging
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${APP_DB_USER}
+      DB_PASSWORD: ${APP_DB_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      ENDPOINT_SECRET_KEY: ${ENDPOINT_SECRET_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:5000/healthz || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - app-network-staging
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.clogged-server.rule=Host(`${APP_HOSTNAME}`)"
+      - "traefik.http.routers.clogged-server.entrypoints=websecure"
+      - "traefik.http.routers.clogged-server.tls.certresolver=myresolver"
+      - "traefik.http.services.clogged-server-svc.loadbalancer.server.port=5000" # Match the internal PORT your app uses
+
+  data-loader:
+    build: ./dumper
+    container_name: clogged_data_loader_staging
+    restart: "no"
+    profiles: ["tools"]
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network-staging
+
+  worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.prod
+    container_name: clogged_worker_staging
+    restart: always
+    command: [ "node", "dist/worker.js" ]
+    environment:
+      NODE_ENV: production
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${APP_DB_USER}
+      DB_PASSWORD: ${APP_DB_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - app-network-staging
+
+  redis:
+    image: redis:7-alpine
+    container_name: clogged_redis_staging
+    restart: always
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data_staging:/data
+    networks:
+      - app-network-staging
+
+networks:
+  app-network-staging:
+    driver: bridge
+
+volumes:
+  postgres_data_staging:
+    driver: local
+  redis_data_staging:
+    driver: local

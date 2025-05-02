@@ -1,0 +1,44 @@
+name: Deploy Clogged App
+
+on:
+  push:
+    branches:
+      - main     # Trigger on push to main (for production)
+      - staging  # Trigger on push to staging
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.ref_name == 'main' && 'Production' || 'Staging' }}
+    runs-on: ubuntu-latest
+
+    # Select the GitHub Environment based on the branch triggering the workflow
+    environment:
+      name: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+
+    steps:
+      - name: Setup DigitalOcean firewall
+        if: github.ref_name == 'staging'
+        uses: earthpyy/setup-digitalocean-firewall@v1.0.1
+        with:
+          access-token: ${{ secrets.DO_ACCESS_TOKEN }}
+          firewall-id: ${{ secrets.DO_FIREWALL_ID }}
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          # These secrets are now automatically sourced from the selected GitHub Environment
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # Pass environment-specific info and branch name to the deploy script
+          script: |
+            export DEPLOY_BRANCH=${{ github.ref_name }}
+            export COMPOSE_FILE_NAME=${{ vars.COMPOSE_FILE_NAME }}
+            export APP_DEPLOY_PATH=${{ vars.DEPLOY_PATH }}
+            
+            echo "Executing deployment script on $host for branch $DEPLOY_BRANCH"
+            cd $APP_DEPLOY_PATH
+            ./deploy.sh # Execute the deployment script
