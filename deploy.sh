@@ -21,7 +21,7 @@ docker compose -f docker-compose.staging.yml build --no-cache # Use --no-cache c
 
 # Bring services down, remove orphans, and bring them up with new images/config
 echo "Restarting services..."
-docker compose up -f docker-compose.staging.yml -d --remove-orphans
+docker compose -f docker-compose.staging.yml up -d --remove-orphans
 
 # Prune unused Docker images to save space (optional)
 echo "Pruning old Docker images..."
