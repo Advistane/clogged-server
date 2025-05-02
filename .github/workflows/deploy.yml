@@ -21,5 +21,5 @@ jobs:
         username: ${{ secrets.SSH_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          cd /home/${{ secrets.SSH_USER }}/my-app # Navigate to your app directory on the server
+          cd /home/${{ secrets.SSH_USER }}/clogged-server
           ./deploy.sh # Execute the deployment script
