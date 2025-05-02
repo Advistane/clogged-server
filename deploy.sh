@@ -42,22 +42,18 @@ git clean -fd
 
 # Build images using the correct compose file
 echo "Building Docker images using ${COMPOSE_FILE}..."
-# Add sudo if needed based on your server's sudoers config
-sudo docker compose -f "${COMPOSE_FILE}" build # Removed --no-cache
+docker compose -f "${COMPOSE_FILE}" build # Removed --no-cache
 
 # Cleanly stop/remove old services defined in *this specific* compose file
 echo "Stopping and removing old services/volumes defined in ${COMPOSE_FILE}..."
-# Add sudo if needed
-sudo docker compose -f "${COMPOSE_FILE}" down -v --remove-orphans
+docker compose -f "${COMPOSE_FILE}" down -v --remove-orphans
 
 # Start new services using the correct compose file
 echo "Starting new services using ${COMPOSE_FILE}..."
-# Add sudo if needed
-sudo docker compose -f "${COMPOSE_FILE}" up -d
+docker compose -f "${COMPOSE_FILE}" up -d
 
 # Prune unused Docker images (optional)
 echo "Pruning old Docker images..."
-# Add sudo if needed
-sudo docker image prune -f
+docker image prune -f
 
 echo "--- Deployment for branch ${TARGET_BRANCH} finished successfully! ---"
