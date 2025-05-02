@@ -8,17 +8,16 @@ on:
 
 jobs:
   deploy:
-    # Job name is dynamic based on the branch
     name: Deploy to ${{ github.ref_name == 'main' && 'Production' || 'Staging' }}
     runs-on: ubuntu-latest
 
     # Select the GitHub Environment based on the branch triggering the workflow
     environment:
       name: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
-      # url: Optional: Can set a URL based on the environment for deployment status checks
 
     steps:
       - name: Setup DigitalOcean firewall
+        if: github.ref_name == 'staging'
         uses: earthpyy/setup-digitalocean-firewall@v1.0.1
         with:
           access-token: ${{ secrets.DO_ACCESS_TOKEN }}
@@ -26,12 +25,9 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v4
-        # Ensure full history is fetched if needed by deploy script (usually not needed for reset --hard)
-        # with:
-        #   fetch-depth: 0
 
       - name: Deploy to Server
-        uses: appleboy/ssh-action@v1.2.2 # Or latest version
+        uses: appleboy/ssh-action@v1.2.2
         with:
           # These secrets are now automatically sourced from the selected GitHub Environment
           host: ${{ secrets.SSH_HOST }}
@@ -40,8 +36,8 @@ jobs:
           # Pass environment-specific info and branch name to the deploy script
           script: |
             export DEPLOY_BRANCH=${{ github.ref_name }}
-            export COMPOSE_FILE_NAME=${{ vars.COMPOSE_FILE_NAME }} # Read variable from Environment
-            export APP_DEPLOY_PATH=${{ vars.DEPLOY_PATH }}         # Read variable from Environment
+            export COMPOSE_FILE_NAME=${{ vars.COMPOSE_FILE_NAME }}
+            export APP_DEPLOY_PATH=${{ vars.DEPLOY_PATH }}
             
             echo "Executing deployment script on $host for branch $DEPLOY_BRANCH"
             cd $APP_DEPLOY_PATH
