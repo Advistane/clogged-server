@@ -18,6 +18,12 @@ jobs:
       # url: Optional: Can set a URL based on the environment for deployment status checks
 
     steps:
+      - name: Setup DigitalOcean firewall
+        uses: earthpyy/setup-digitalocean-firewall@v1.0.1
+        with:
+          access-token: ${{ secrets.DO_ACCESS_TOKEN }}
+          firewall-id: ${{ secrets.DO_FIREWALL_ID }}
+
       - name: Checkout code
         uses: actions/checkout@v4
         # Ensure full history is fetched if needed by deploy script (usually not needed for reset --hard)
