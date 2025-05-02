@@ -127,3 +127,5 @@ volumes:
     driver: local
   redis_data_staging:
     driver: local
+  cloudbeaver_data_staging: # Added volume for CloudBeaver
+    driver: local
