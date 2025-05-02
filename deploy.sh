@@ -25,6 +25,6 @@ docker compose -f docker-compose.staging.yml up -d --remove-orphans
 
 # Prune unused Docker images to save space (optional)
 echo "Pruning old Docker images..."
-docker image prune -af # -a removes unused and dangling images, -f forces
+docker image prune -f # -a removes unused and dangling images, -f forces
 
 echo "Deployment finished successfully!"
