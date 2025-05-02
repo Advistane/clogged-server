@@ -58,7 +58,7 @@ pool.connect((err, client, release) => {
 
 // Routes
 app.get('/', (req: Request, res: Response) => {
-	res.send('API is running...on staging');
+	res.send('API is running...');
 });
 
 // In your Express app (server.ts or similar)
