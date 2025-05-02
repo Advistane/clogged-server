@@ -17,11 +17,11 @@ git clean -fd # Remove untracked files and directories
 
 # Rebuild services if their source code/Dockerfiles changed
 echo "Building Docker images..."
-docker compose build --no-cache # Use --no-cache cautiously, can slow builds
+docker compose -f docker-compose.staging.yml build --no-cache # Use --no-cache cautiously, can slow builds
 
 # Bring services down, remove orphans, and bring them up with new images/config
 echo "Restarting services..."
-docker compose up -d --remove-orphans
+docker compose up -f docker-compose.staging.yml -d --remove-orphans
 
 # Prune unused Docker images to save space (optional)
 echo "Pruning old Docker images..."
