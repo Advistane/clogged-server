@@ -22,7 +22,7 @@ echo "Starting deployment..."
 echo "Target Branch: ${TARGET_BRANCH}"
 echo "Compose File: ${COMPOSE_FILE}"
 echo "Deployment Path: ${APP_PATH}"
-
+echo "Grafana root URL: ${GF_SERVER_ROOT_URL}"
 export B2_ACCESS_KEY_ID
 export B2_SECRET_ACCESS_KEY
 export B2_ENDPOINT # Make sure these are also passed/exported if needed

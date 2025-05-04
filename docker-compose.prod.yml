@@ -18,7 +18,7 @@ services:
       - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
       - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
       - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
-      - "--api.dashboard=true"
+      - "--api.dashboard=false"
     ports:
       - "80:80"
       - "443:443"
@@ -36,14 +36,6 @@ services:
           memory: 128M
     labels:
       - "traefik.enable=true"
-
-      # --- Dashboard Routing (Use ENV VAR for hostname) ---
-      - "traefik.http.routers.traefik-dashboard-prod.rule=Host(`${TRAEFIK_DASHBOARD_HOST}`)"
-      - "traefik.http.routers.traefik-dashboard-prod.entrypoints=websecure"
-      - "traefik.http.routers.traefik-dashboard-prod.tls.certresolver=myresolver"
-      - "traefik.http.routers.traefik-dashboard-prod.service=api@internal"
-      - "traefik.http.routers.traefik-dashboard-prod.middlewares=admin-auth-prod@docker"
-      - "traefik.http.middlewares.admin-auth-prod.basicauth.users=${TRAEFIK_AUTH_USERS}"
 
   # PostgreSQL Database
   db:
