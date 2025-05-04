@@ -17,6 +17,9 @@ services:
       - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
       - "--certificatesresolvers.myresolver.acme.email=${ACME_EMAIL}"
       - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - "--accesslog=true"
+      - "--accesslog.filepath=/logs/access.log"
+      - "--accesslog.bufferingsize=100"
     ports:
       - "80:80"
       - "443:443"
@@ -24,6 +27,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/traefik/letsencrypt:/letsencrypt
+      - traefik_logs:/logs
     networks:
       - app-network-staging
 
@@ -133,6 +137,54 @@ services:
     networks:
       - app-network-staging
 
+  loki:
+    image: grafana/loki:3.4.1
+    container_name: loki_staging
+    restart: always
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./logging/loki-config-staging.yaml:/etc/loki/loki-config.yaml:ro
+      - loki_data_staging:/loki
+    networks:
+      - app-network-staging
+
+  promtail:
+    image: grafana/promtail:3.4.1
+    container_name: promtail_staging
+    restart: always
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./logging/promtail-config-staging.yaml:/etc/promtail/promtail-config.yaml:ro
+      - promtail_positions_staging:/tmp
+    networks:
+      - app-network-staging
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:11.6.1
+    container_name: grafana_staging
+    restart: always
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=https://logs.${APP_HOSTNAME}
+    volumes:
+      - grafana_data_staging:/var/lib/grafana # Persistent storage for dashboards, etc.
+      - ./logging/grafana-datasources-staging.yaml:/etc/grafana/provisioning/datasources/loki-datasource.yaml:ro # Auto-configure Loki datasource
+    networks:
+      - app-network-staging
+    depends_on:
+      - loki
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana-staging.rule=Host(`logs.${APP_HOSTNAME}`)"
+      - "traefik.http.routers.grafana-staging.entrypoints=websecure"
+      - "traefik.http.routers.grafana-staging.tls.certresolver=myresolver"
+      - "traefik.http.services.grafana-staging-svc.loadbalancer.server.port=3000"
+
 networks:
   app-network-staging:
     driver: bridge
@@ -141,4 +193,12 @@ volumes:
   postgres_data_staging:
     driver: local
   redis_data_staging:
+    driver: local
+  loki_data_staging:
+    driver: local
+  promtail_positions_staging:
+    driver: local
+  grafana_data_staging:
+    driver: local
+  traefik_logs:
     driver: local

@@ -1,10 +1,11 @@
-﻿import {Router, Request, Response, RequestHandler} from 'express';
+﻿import {Request, RequestHandler, Response, Router} from 'express';
 import {Pool} from 'pg';
 import {clogUpdateQueue, redisConnection} from "../queue";
 import {Job} from "bullmq";
 import {UserCollectionData} from "../models/UpdateCollectionLogRequest";
 import {getKCLookupAliases, getSubcategoryAlias} from "../utils/alias";
 import {StaticDataRequest} from "../models/UpdateCollectionLogStaticDataRequest";
+
 export interface Kc {
 	kc: number;
 }
@@ -26,13 +27,13 @@ export const createClogRouter = (pool: Pool) => {
 
 		if (!SECRET_KEY) {
 			req.log.error("Authentication check skipped: ENDPOINT_SECRET_KEY is not configured on the server.");
-			res.status(500).json({ error: "Server configuration error." });
+			res.status(500).json({error: "Server configuration error."});
 			return;
 		}
 
 		if (!providedKey) {
 			req.log.warn("Access denied: Missing X-API-Key header.");
-			res.status(401).json({ error: "Unauthorized: Missing API Key." });
+			res.status(401).json({error: "Unauthorized: Missing API Key."});
 			return;
 		}
 
@@ -41,15 +42,46 @@ export const createClogRouter = (pool: Pool) => {
 			return next(); // This is already void-returning
 		} else {
 			req.log.warn("Access denied: Invalid API Key provided.");
-			res.status(403).json({ error: "Forbidden: Invalid API Key." });
+			res.status(403).json({error: "Forbidden: Invalid API Key."});
 			return;
 		}
 	};
 
 	// Get all items
 	router.post('/update', async (req, res): Promise<any> => {
-		const {username, accountHash, collectedItems, subcategories}: UserCollectionData = req.body;
+		let {username, accountHash, collectedItems, subcategories}: UserCollectionData = req.body;
 		req.log.info({accountHash, username}, 'Received clog update request');
+
+		if (req.body.collectedIds) {
+			const {username2, accountHash2, collectedIds, categories2} = req.body;
+
+			let convertedCollectedItems: { id: number, quantity: number }[] = [];
+
+			req.log.warn('Received deprecated clog update request. Please use "collectedItems" instead.');
+			req.log.info(collectedIds);
+			for (const subcategoryIdStr in collectedIds) {
+				// Ensure the key is actually a property of the object
+				if (Object.prototype.hasOwnProperty.call(collectedIds, subcategoryIdStr)) {
+					const itemIds = collectedIds[subcategoryIdStr];
+
+					if (!Array.isArray(itemIds)) {
+						req.log.warn(`Skipping invalid collectedIds entry. Item ids Value: ${JSON.stringify(itemIds)}`);
+						continue;
+					}
+
+					itemIds.forEach((itemId: number) => {
+						if (typeof itemId !== 'number' || isNaN(itemId)) {
+							req.log.warn(`Skipping invalid itemId: ${itemId}`);
+						} else {
+							convertedCollectedItems.push({id: itemId, quantity: 1}); // Default quantity to 1
+						}
+					});
+				}
+			}
+			collectedItems = convertedCollectedItems;
+			subcategories = [];
+			req.log.info('Converted "collectedIds" to "collectedItems" format.', {collectedItems});
+		}
 
 		if (typeof collectedItems !== 'object' || collectedItems === null) {
 			req.log.warn('Invalid request body structure or types for clog update');
@@ -96,7 +128,7 @@ export const createClogRouter = (pool: Pool) => {
 		if (!data || !Array.isArray(data.subcategories) || !Array.isArray(data.categories) || data.categories === null) {
 			req.log.error('Invalid data format received post-authentication.');
 			// Note: Authentication succeeded, but the body is wrong.
-			res.status(400).json({ error: 'Invalid data format...' });
+			res.status(400).json({error: 'Invalid data format...'});
 			return;
 		}
 
@@ -116,10 +148,10 @@ export const createClogRouter = (pool: Pool) => {
 				const categoryName = category.name;
 
 				const insertCategoryQuery = `
-						INSERT INTO categories (id, name)
-						VALUES ($1, $2)
-						ON CONFLICT DO NOTHING;
-					`;
+                    INSERT INTO categories (id, name)
+                    VALUES ($1, $2)
+                    ON CONFLICT DO NOTHING;
+				`;
 				await client.query(insertCategoryQuery, [categoryId, categoryName]);
 			}
 			await client.query('COMMIT'); // Commit transaction
@@ -127,9 +159,9 @@ export const createClogRouter = (pool: Pool) => {
 			for (const subcategory of data.subcategories) {
 				req.log.info(`Inserting subcategory ${subcategory.name}...`);
 				const insertSubcategoryQuery = `
-					INSERT INTO subcategories (id, name, categoryId)
-					VALUES ($1, $2, $3)
-					ON CONFLICT DO NOTHING;
+                    INSERT INTO subcategories (id, name, categoryId)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT DO NOTHING;
 				`;
 				await client.query(insertSubcategoryQuery, [
 					subcategory.id,
@@ -141,9 +173,9 @@ export const createClogRouter = (pool: Pool) => {
 				for (const item in subcategory.items) {
 					const itemId = subcategory.items[item];
 					const insertItemQuery = `
-						INSERT INTO subcategory_items (subcategoryid, itemid)
-						VALUES ($1, $2)
-						ON CONFLICT DO NOTHING;
+                        INSERT INTO subcategory_items (subcategoryid, itemid)
+                        VALUES ($1, $2)
+                        ON CONFLICT DO NOTHING;
 					`;
 					await client.query(insertItemQuery, [subcategory.id, itemId]);
 				}
@@ -152,7 +184,7 @@ export const createClogRouter = (pool: Pool) => {
 
 		} catch (err) {
 			req.log.error(err, 'Error processing data');
-			res.status(500).json({ error: 'Server error' });
+			res.status(500).json({error: 'Server error'});
 			return;
 		} finally {
 			client.release();
@@ -167,17 +199,95 @@ export const createClogRouter = (pool: Pool) => {
 		});
 	});
 
+	router.get('/get/:username/:subcategoryId', async (req, res): Promise<any> => {
+		const log = req.log;
+		log.info({
+			username: req.params.username,
+			subcategoryId: req.params.subcategoryId
+		}, 'Fetching deprecated collection log data request');
+		const username: string = decodeURIComponent(req.params.username);
+		const subcategoryId: string = req.params.subcategoryId;
+		const client = await pool.connect();
+
+		if (!username || !subcategoryId) {
+			res.status(400).send('Invalid username or subcategory ID');
+			return;
+		}
+
+		try {
+			const query = `
+					  SELECT 
+					    pi.itemid
+					  FROM 
+					    player_items pi
+					  INNER JOIN 
+					    players p ON pi.accountHash = p.accountHash
+					  INNER JOIN 
+					    subcategory_items sci ON sci.itemid = pi.itemid
+					  INNER JOIN 
+					    subcategories s ON s.id = sci.subcategoryid
+					  LEFT JOIN 
+					    player_kc pkc ON pkc.accountHash = p.accountHash 
+					                  AND pkc.subcategoryId = s.id 
+					                  AND pkc.kc != -1
+					  WHERE 
+					    p.username ILIKE $1
+					    AND s.id = $2
+					`;
+
+			const result = await client.query<CollectionLogItem>(query, [username, subcategoryId]);
+
+			const items = []
+			for (const item of result.rows) {
+				items.push(item.itemid);
+			}
+
+			const kc = result.rows.length > 0 ? result.rows[0].kc || 0 : 0;
+
+			const response = {
+				kc: kc,
+				items: items
+			}
+
+			res.json(response);
+		} catch (err) {
+			log.error(err, 'Error querying items');
+			res.status(500).send('Server error');
+		} finally {
+			if (client) {
+				client.release();
+				log.debug('Database client released');
+			}
+		}
+	})
+
 	router.get('/:username/:subcategoryName', async (req, res): Promise<any> => {
 		const username: string = decodeURIComponent(req.params.username);
 		const subcategoryName: string = req.params.subcategoryName;
-		const subcategoryAliased: string = getSubcategoryAlias(subcategoryName);
+		let subcategoryAliased: string = getSubcategoryAlias(subcategoryName);
 		const log = req.log;
 
-		log.info({username, subcategoryName}, 'Fetching collection log data request');
+		if (!isNaN(Number(subcategoryName))) {
+			const client = await pool.connect();
+			const result = await client.query(`SELECT name
+                                               FROM subcategories
+                                               WHERE id = $1`, [subcategoryName]);
+			if (result.rows.length > 0) {
+				subcategoryAliased = result.rows[0].name;
+				log.info({username, subcategoryName, subcategoryAliased}, 'Subcategory name found by ID');
+				client.release();
+			}
+
+			log.warn({
+				username,
+				subcategoryName
+			}, 'Subcategory name should not be a number and this is deprecated. Please use the subcategory name instead of ID.');
+		}
+
+		log.info({username, subcategoryAliased}, 'Fetching collection log data request');
 
 		if (!username || !subcategoryAliased) {
-			log.warn({username, subcategoryAliased}, 'Invalid request parameters');
-			res.status(400).send('Invalid username or subcategoryId');
+			res.status(400).send('Invalid username or subcategory name');
 			return;
 		}
 
@@ -208,17 +318,17 @@ export const createClogRouter = (pool: Pool) => {
 
 		try {
 			const result = await client.query<CollectionLogItem>(
-				`SELECT 
-								     pi.itemid, 
-								     pi.quantity, 
-								     pkc.kc,
-								     s.name
-								   FROM player_items pi
-								   JOIN subcategories s ON s.name = $2
-								   JOIN players p ON pi.accountHash = p.accountHash
-								   JOIN subcategory_items sci ON sci.subcategoryid = s.id AND sci.itemid = pi.itemid
-                                   LEFT JOIN player_kc pkc ON pkc.accountHash = p.accountHash AND pkc.subcategoryId = s.id AND pkc.kc != -1
-								   WHERE p.username ILIKE $1`,
+				`SELECT pi.itemid,
+                        pi.quantity,
+                        pkc.kc,
+                        s.name
+                 FROM player_items pi
+                          JOIN subcategories s ON s.name = $2
+                          JOIN players p ON pi.accountHash = p.accountHash
+                          JOIN subcategory_items sci ON sci.subcategoryid = s.id AND sci.itemid = pi.itemid
+                          LEFT JOIN player_kc pkc
+                                    ON pkc.accountHash = p.accountHash AND pkc.subcategoryId = s.id AND pkc.kc != -1
+                 WHERE p.username ILIKE $1`,
 				[username, subcategoryAliased]
 			);
 
@@ -273,7 +383,7 @@ export const createClogRouter = (pool: Pool) => {
 			res.status(200).json(aliases);
 		} catch (error) {
 			req.log.error(error, 'Failed to fetch KC lookup aliases');
-			res.status(500).json({ error: 'Failed to fetch KC lookup aliases' });
+			res.status(500).json({error: 'Failed to fetch KC lookup aliases'});
 		}
 	});
 
