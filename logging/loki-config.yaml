@@ -1,0 +1,50 @@
+﻿auth_enabled: false # Keep false unless Loki needs direct user auth
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  # Set log level to info or warn for production
+  log_level: info
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    s3:
+      # Values sourced from .env file by Docker Compose
+      endpoint: ${B2_ENDPOINT}
+      region: ${B2_REGION}
+      bucketnames: ${B2_BUCKET_NAME}
+      access_key_id: ${B2_ACCESS_KEY_ID}
+      secret_access_key: ${B2_SECRET_ACCESS_KEY}
+      s3forcepathstyle: true
+      insecure: false
+      http_config:
+        idle_conn_timeout: 90s
+        response_header_timeout: 0s
+        insecure_skip_verify: false
+
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2025-01-01 # Start date for the schema
+      store: tsdb
+      object_store: s3 # Use S3 (B2) backend
+      schema: v13 # Use latest schema version
+      index:
+        prefix: index_
+        period: 24h
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  compaction_interval: 10m
+  delete_request_store: s3
+
+limits_config:
+  retention_period: 720h
+  max_entries_limit_per_request: 5000000
