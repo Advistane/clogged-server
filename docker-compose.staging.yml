@@ -188,7 +188,7 @@ services:
       - loki
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.grafana-staging.rule=Host(`${GF_SERVER_ROOT_URL//https:\/\//}`)"
+      - "traefik.http.routers.grafana-staging.rule=Host(`${GF_SERVER_ROOT_URL//https://}`)"
       - "traefik.http.routers.grafana-staging.entrypoints=websecure"
       - "traefik.http.routers.grafana-staging.tls.certresolver=myresolver"
       - "traefik.http.services.grafana-staging-svc.loadbalancer.server.port=3000"
