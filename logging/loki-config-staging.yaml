@@ -9,11 +9,11 @@ common:
   path_prefix: /loki
   storage:
     s3:
-      endpoint: ${B2_ENDPOINT_STAGING}
-      region: ${B2_REGION_STAGING}
-      bucketnames: ${B2_BUCKET_NAME_STAGING}
-      access_key_id: ${B2_ACCESS_KEY_ID_STAGING}
-      secret_access_key: ${B2_SECRET_ACCESS_KEY_STAGING}
+      endpoint: ${B2_ENDPOINT}
+      region: ${B2_REGION}
+      bucketnames: ${B2_BUCKET_NAME}
+      access_key_id: ${B2_ACCESS_KEY_ID}
+      secret_access_key: ${B2_SECRET_ACCESS_KEY}
       s3forcepathstyle: true
       insecure: false
   replication_factor: 1
