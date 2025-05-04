@@ -38,6 +38,16 @@ jobs:
             export DEPLOY_BRANCH=${{ github.ref_name }}
             export COMPOSE_FILE_NAME=${{ vars.COMPOSE_FILE_NAME }}
             export APP_DEPLOY_PATH=${{ vars.DEPLOY_PATH }}
+            export B2_BUCKET_NAME=${{ vars.B2_BUCKET_NAME }}
+            export B2_ENDPOINT=${{ vars.B2_ENDPOINT }}
+            export B2_REGION=${{ vars.B2_REGION }}
+            
+            export B2_ACCESS_KEY_ID=${{ secrets.B2_ACCESS_KEY_ID }}
+            export B2_SECRET_ACCESS_KEY=${{ secrets.B2_SECRET_ACCESS_KEY }}
+            export GF_SECURITY_ADMIN_USER=${{ secrets.GF_SECURITY_ADMIN_USER }}
+            export GF_SECURITY_ADMIN_PASSWORD=${{ secrets.GF_SECURITY_ADMIN_PASSWORD }}
+            export GF_SERVER_ROOT_URL=${{ secrets.GF_SERVER_ROOT_URL }}
+            export ACME_EMAIL=${{ secrets.ACME_EMAIL }}
             
             echo "Executing deployment script on $host for branch $DEPLOY_BRANCH"
             cd $APP_DEPLOY_PATH
