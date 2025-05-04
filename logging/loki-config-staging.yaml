@@ -8,9 +8,14 @@ common:
   instance_addr: 127.0.0.1
   path_prefix: /loki
   storage:
-    filesystem:
-      chunks_directory: /loki/chunks
-      rules_directory: /loki/rules
+    s3:
+      endpoint: ${B2_ENDPOINT_STAGING}
+      region: ${B2_REGION_STAGING}
+      bucketnames: ${B2_BUCKET_NAME_STAGING}
+      access_key_id: ${B2_ACCESS_KEY_ID_STAGING}
+      secret_access_key: ${B2_SECRET_ACCESS_KEY_STAGING}
+      s3forcepathstyle: true
+      insecure: false
   replication_factor: 1
   ring:
     kvstore:
@@ -20,7 +25,7 @@ schema_config:
   configs:
     - from: 2025-05-01
       store: tsdb
-      object_store: filesystem
+      object_store: s3
       schema: v13
       index:
         prefix: index_
@@ -32,6 +37,7 @@ compactor:
   retention_enabled: true
   retention_delete_delay: 2h
   retention_delete_worker_count: 150
+  delete_request_store: s3
 
 limits_config:
   retention_period: 168h # 7d * 24h = 168h

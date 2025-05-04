@@ -82,7 +82,6 @@ const processClogUpdate = async (job: Job<UserCollectionData>) => {
 		for (const subcategory of subcategories) {
 			const subcategoryId = subcategory.id;
 			let kc = subcategory.kc;
-			log.info(`Processing subcategory: ${JSON.stringify(subcategory)} `);
 			if (!subcategoryId) {
 				log.warn(`Skipping collected item due to missing id: ${JSON.stringify(subcategory)}`);
 				continue;
@@ -92,12 +91,16 @@ const processClogUpdate = async (job: Job<UserCollectionData>) => {
 				kc = -1;
 			}
 
-			const itemInsertQuery = `
+			try {
+				const itemInsertQuery = `
 					INSERT INTO player_kc (accountHash, subcategoryid, kc)
 					VALUES ($1, $2, $3)
 					ON CONFLICT (accountHash, subcategoryid) DO UPDATE SET kc = EXCLUDED.kc;
 				`;
-			await client.query(itemInsertQuery, [accountHash, subcategoryId, kc]);
+				await client.query(itemInsertQuery, [accountHash, subcategoryId, kc]);
+			} catch (err) {
+				log.error(err, `Error inserting/updating player_kc for accountHash: ${accountHash}, subcategoryId: ${subcategoryId}`);
+			}
 		}
 
 		await client.query('COMMIT'); // Commit transaction
