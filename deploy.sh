@@ -49,8 +49,7 @@ git clean -fd
 echo "Building Docker images using ${COMPOSE_FILE}..."
 docker compose -f "${COMPOSE_FILE}" build
 
-echo "Stopping and removing old services/volumes defined in ${COMPOSE_FILE}..."
-docker compose -f "${COMPOSE_FILE}" down -v --remove-orphans
+docker compose -f "${COMPOSE_FILE}" down --remove-orphans
 
 # Start new services using the correct compose file
 echo "Starting new services using ${COMPOSE_FILE}..."
