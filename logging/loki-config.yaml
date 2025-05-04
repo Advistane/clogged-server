@@ -46,5 +46,5 @@ compactor:
   delete_request_store: s3
 
 limits_config:
-  retention_period: 720h
+  retention_period: 168h
   max_entries_limit_per_request: 5000000
