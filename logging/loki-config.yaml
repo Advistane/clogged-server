@@ -47,4 +47,3 @@ compactor:
 
 limits_config:
   retention_period: 168h
-  max_entries_limit_per_request: 5000000
