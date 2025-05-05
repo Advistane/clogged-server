@@ -93,7 +93,6 @@ def update_db(data_dump: list):
         try:
             upsert_categories(conn)
             for data in data_dump:
-                logging.info(f"Processing data entry...{data}")
                 name = data["name"]
                 items = data["items"]
                 subcategory_id = data["subcategory_id"]

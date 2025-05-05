@@ -2,7 +2,6 @@
 from typing import Any
 
 import aiohttp
-import requests
 
 enums = [
     {
