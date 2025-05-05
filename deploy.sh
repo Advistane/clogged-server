@@ -49,6 +49,18 @@ git clean -fd
 echo "Building Docker images using ${COMPOSE_FILE}..."
 docker compose -f "${COMPOSE_FILE}" build
 
+# --- Run Database Migrations ---
+echo "Running database migrations..."
+# Use 'run --rm' to start a temporary container based on the 'server' service definition
+# Pass the necessary PG* environment variables mapped from your DB* variables
+docker compose -f "${COMPOSE_FILE}" run --rm \
+  -e PGHOST="${DB_HOST}" \
+  -e PGPORT="${DB_PORT}" \
+  -e PGDATABASE="${POSTGRES_DB}" \
+  -e PGUSER="${APP_DB_USER}" \
+  -e PGPASSWORD="${APP_DB_PASSWORD}" \
+  server npm run migrate:up
+
 docker compose -f "${COMPOSE_FILE}" down --remove-orphans
 
 # Start new services using the correct compose file
