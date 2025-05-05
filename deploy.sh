@@ -57,26 +57,6 @@ echo "Starting new services using ${COMPOSE_FILE}..."
 docker compose -f "${COMPOSE_FILE}" up -d
 
 echo "Starting database migrations..."
-
-echo "--- DEBUG: Checking filesystem and context inside migration container ---"
-docker compose -f "${COMPOSE_FILE}" run --rm \
-  -e PGHOST="db" \
-  -e PGPORT=5432 \
-  -e PGDATABASE="${POSTGRES_DB}" \
-  -e PGUSER="${POSTGRES_USER}" \
-  -e PGPASSWORD="${POSTGRES_PASSWORD}" \
-  server sh -c 'echo "*** Inside Container ***"; \
-                echo "Running as user: $(whoami)"; \
-                echo "Current directory: $(pwd)"; \
-                echo "--- Listing /app/server: ---"; \
-                ls -la /app/server; \
-                echo "--- Listing /app/server/migrations (if exists): ---"; \
-                ls -la /app/server/migrations; \
-                echo "*** End Inside Container ***"'
-
-echo "DEBUG: Filesystem check finished. Stopping script for debugging."
-
-
 docker compose -f "${COMPOSE_FILE}" run --rm \
   -e PGHOST="db" \
   -e PGPORT=5432 \
