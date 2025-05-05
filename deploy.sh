@@ -46,9 +46,16 @@ git fetch origin "${TARGET_BRANCH}"
 git reset --hard origin/"${TARGET_BRANCH}"
 git clean -fd
 
-# --- Run Database Migrations ---
-echo "Running database migrations..."
-echo "APP_DB_USER = ${APP_DB_USER}"
+echo "Building Docker images using ${COMPOSE_FILE}..."
+docker compose -f "${COMPOSE_FILE}" build
+
+docker compose -f "${COMPOSE_FILE}" down --remove-orphans
+
+# Start new services using the correct compose file
+echo "Starting new services using ${COMPOSE_FILE}..."
+docker compose -f "${COMPOSE_FILE}" up -d
+
+echo "Starting database migrations..."
 
 echo "--- DEBUG: Checking filesystem and context inside migration container ---"
 docker compose -f "${COMPOSE_FILE}" run --rm \
@@ -67,11 +74,8 @@ docker compose -f "${COMPOSE_FILE}" run --rm \
                 echo "*** End Inside Container ***"'
 
 echo "DEBUG: Filesystem check finished. Stopping script for debugging."
-exit 1 # Stop the script here during debugging
 
 
-# Use 'run --rm' to start a temporary container based on the 'server' service definition
-# Pass the necessary PG* environment variables mapped from your DB* variables
 docker compose -f "${COMPOSE_FILE}" run --rm \
   -e PGHOST="db" \
   -e PGPORT=5432 \
@@ -79,15 +83,6 @@ docker compose -f "${COMPOSE_FILE}" run --rm \
   -e PGUSER="${POSTGRES_USER}" \
   -e PGPASSWORD="${POSTGRES_PASSWORD}" \
   server npm run migrate:up
-
-echo "Building Docker images using ${COMPOSE_FILE}..."
-docker compose -f "${COMPOSE_FILE}" build
-
-docker compose -f "${COMPOSE_FILE}" down --remove-orphans
-
-# Start new services using the correct compose file
-echo "Starting new services using ${COMPOSE_FILE}..."
-docker compose -f "${COMPOSE_FILE}" up -d
 
 # Prune unused Docker images (optional)
 echo "Pruning old Docker images..."
