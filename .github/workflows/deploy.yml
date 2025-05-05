@@ -126,6 +126,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           # Pass environment-specific info and branch name to the deploy script
           script: |
+            export ENV_FILE_PATH="$APP_DEPLOY_PATH/.env"
             export DEPLOY_BRANCH=${{ github.ref_name }}
             export COMPOSE_FILE_NAME=${{ vars.COMPOSE_FILE_NAME }}
             export APP_DEPLOY_PATH=${{ vars.DEPLOY_PATH }}
