@@ -142,6 +142,9 @@ jobs:
             export DATA_LOADER_IMAGE_NAME="${{ needs.build-and-push.outputs.dataloader_image }}"
             export WORKER_IMAGE_NAME="${{ needs.build-and-push.outputs.worker_image }}"
             
+            export GHCR_USER=${{ github.repository_owner }}
+            export GHCR_TOKEN=${{ secrets.GHCR_TOKEN }}
+            
             echo "Executing deployment script on $host for branch $DEPLOY_BRANCH"
             cd $APP_DEPLOY_PATH
             ./deploy.sh # Execute the deployment script
