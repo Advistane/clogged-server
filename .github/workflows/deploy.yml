@@ -133,6 +133,8 @@ jobs:
             export B2_ENDPOINT=${{ vars.B2_ENDPOINT }}
             export B2_REGION=${{ vars.B2_REGION }}
             export POSTGRES_DB=${{ vars.POSTGRES_DB }}
+            export APP_HOSTNAME=${{ vars.APP_HOSTNAME }}
+            export GRAFANA_HOSTNAME=${{ vars.GRAFANA_HOSTNAME }}
             
             export B2_ACCESS_KEY_ID=${{ secrets.B2_ACCESS_KEY_ID }}
             export B2_SECRET_ACCESS_KEY=${{ secrets.B2_SECRET_ACCESS_KEY }}
