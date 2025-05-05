@@ -92,6 +92,7 @@ jobs:
   deploy:
     name: Deploy to ${{ github.ref_name == 'main' && 'Production' || 'Staging' }}
     runs-on: ubuntu-latest
+    needs: build-and-push
 
     # Select the GitHub Environment based on the branch triggering the workflow
     environment:
