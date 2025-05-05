@@ -1,38 +1,31 @@
 #!/bin/bash
 set -e # Exit immediately if a command exits with a non-zero status.
 
-TARGET_BRANCH="${DEPLOY_BRANCH}"
-COMPOSE_FILE="${COMPOSE_FILE_NAME}"
-APP_PATH="${APP_DEPLOY_PATH}" # Deployment path on the server
-
-if [ -z "$TARGET_BRANCH" ]; then
-  echo "Error: DEPLOY_BRANCH environment variable not set."
-  exit 1
-fi
-if [ -z "$COMPOSE_FILE" ]; then
-  echo "Error: COMPOSE_FILE_NAME environment variable not set."
-  exit 1
-fi
-if [ -z "$APP_PATH" ]; then
-  echo "Error: APP_DEPLOY_PATH environment variable not set."
-  exit 1
-fi
+# --- Validate Required Variables ---
+required_vars=(
+    TARGET_BRANCH COMPOSE_FILE APP_PATH
+    DB_IMAGE_NAME SERVER_IMAGE_NAME DATA_LOADER_IMAGE_NAME WORKER_IMAGE_NAME
+    GHCR_USER GHCR_TOKEN
+    ACME_EMAIL POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB
+    APP_DB_USER APP_DB_PASSWORD ENDPOINT_SECRET_KEY APP_HOSTNAME GRAFANA_HOSTNAME
+    B2_ACCESS_KEY_ID B2_SECRET_ACCESS_KEY B2_BUCKET_NAME B2_ENDPOINT B2_REGION
+    GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD GF_SERVER_ROOT_URL
+    GF_USERS_ALLOW_SIGN_UP GF_AUTH_ANONYMOUS_ENABLED
+)
+for var in "${required_vars[@]}"; do
+    if [ -z "${!var}" ]; then
+        echo "Error: Environment variable '$var' is not set."
+        exit 1
+    fi
+done
 
 echo "Starting deployment..."
 echo "Target Branch: ${TARGET_BRANCH}"
 echo "Compose File: ${COMPOSE_FILE}"
 echo "Deployment Path: ${APP_PATH}"
-echo "Grafana root URL: ${GF_SERVER_ROOT_URL}"
-export B2_ACCESS_KEY_ID
-export B2_SECRET_ACCESS_KEY
-export B2_ENDPOINT # Make sure these are also passed/exported if needed
-export B2_BUCKET_NAME
-export B2_REGION
-export GF_SECURITY_ADMIN_USER # Pass relevant Grafana/Traefik vars too
-export GF_SECURITY_ADMIN_PASSWORD
-export GF_SERVER_ROOT_URL
-export ACME_EMAIL
+echo "Server Image: ${SERVER_IMAGE_NAME}" # Example logging
 
+# --- Navigate to App Directory ---
 cd "$APP_PATH" || { echo "Failed to cd into app directory '$APP_PATH'"; exit 1; }
 
 if [ ! -f "$COMPOSE_FILE" ]; then
@@ -40,33 +33,62 @@ if [ ! -f "$COMPOSE_FILE" ]; then
      exit 1
 fi
 
-
-echo "Pulling latest code from origin/${TARGET_BRANCH}..."
+# --- Update Code (Optional but good practice) ---
+# If your deploy.sh script itself or other config files (like loki/promtail)
+# are part of the repo, you still need to pull them.
+echo "Pulling latest configuration files from origin/${TARGET_BRANCH}..."
+# Stash local changes if any, fetch, reset, clean
+# Be CAREFUL if you have manually modified files on the server you want to keep
+# git stash push -m "Pre-deploy stash $(date)" || true # Stash uncommitted changes
 git fetch origin "${TARGET_BRANCH}"
 git reset --hard origin/"${TARGET_BRANCH}"
-git clean -fd
+git clean -fd # Remove untracked files/dirs
 
-echo "Building Docker images using ${COMPOSE_FILE} (no cache)..."
-# Add the --no-cache flag
-docker compose -f "${COMPOSE_FILE}" build --no-cache
+# --- Log in to GitHub Container Registry ---
+echo "Logging in to GitHub Container Registry (ghcr.io)..."
+echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
 
+# --- Pull latest images specified in compose file ---
+echo "Pulling Docker images from GHCR using ${COMPOSE_FILE}..."
+# docker-compose will use the *_IMAGE_NAME env vars defined in the file
+docker compose -f "${COMPOSE_FILE}" pull
+
+# --- Stop and remove old containers ---
+echo "Stopping and removing existing services..."
+# Use --remove-orphans to clean up containers from services removed from the compose file
 docker compose -f "${COMPOSE_FILE}" down --remove-orphans
 
-# Start new services using the correct compose file
+# --- Build step is REMOVED ---
+# echo "Building Docker images using ${COMPOSE_FILE} (no cache)..." # REMOVED
+# docker compose -f "${COMPOSE_FILE}" build --no-cache            # REMOVED
+
+# --- Start new services ---
 echo "Starting new services using ${COMPOSE_FILE}..."
+# docker-compose will use the images pulled previously
 docker compose -f "${COMPOSE_FILE}" up -d
 
-echo "Starting database migrations..."
-docker compose -f "${COMPOSE_FILE}" run --rm \
-  -e PGHOST="db" \
-  -e PGPORT=5432 \
-  -e PGDATABASE="${POSTGRES_DB}" \
-  -e PGUSER="${POSTGRES_USER}" \
-  -e PGPASSWORD="${POSTGRES_PASSWORD}" \
-  server npm run migrate:up
+# --- Run Database Migrations ---
+# Check if the server service exists before trying to run migrations
+if docker compose -f "${COMPOSE_FILE}" ps --services | grep -q '^server$'; then
+    echo "Starting database migrations..."
+    docker compose -f "${COMPOSE_FILE}" run --rm \
+      -e PGHOST="db" \
+      -e PGPORT=5432 \
+      -e PGDATABASE="${POSTGRES_DB}" \
+      -e PGUSER="${POSTGRES_USER}" \
+      -e PGPASSWORD="${POSTGRES_PASSWORD}" \
+      server npm run migrate:up # Make sure 'server' is the correct service name
+else
+    echo "Skipping migrations: 'server' service not defined or not running."
+fi
 
-# Prune unused Docker images (optional)
+
+# --- Prune unused Docker images (Optional but Recommended) ---
 echo "Pruning old Docker images..."
-docker image prune -f
+docker image prune -a -f --filter "label!=maintainer=Traefik" # Keep traefik image if needed, -a prunes unused AND dangling
+
+# --- Logout from GHCR (Good Practice) ---
+echo "Logging out from GHCR..."
+docker logout ghcr.io
 
 echo "--- Deployment for branch ${TARGET_BRANCH} finished successfully! ---"

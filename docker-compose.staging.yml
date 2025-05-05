@@ -33,7 +33,7 @@ services:
       - traefik-public
 
   db:
-    build: ./database
+    image: ${DB_IMAGE_NAME}
     container_name: clogged_db_staging
     restart: always
     environment:
@@ -53,9 +53,7 @@ services:
       - app-network-staging
 
   server:
-    build:
-      context: ./server
-      dockerfile: Dockerfile.prod
+    image: ${SERVER_IMAGE_NAME}
     container_name: clogged_server_staging
     restart: always
     environment:
@@ -88,7 +86,7 @@ services:
       - "traefik.http.services.clogged-server-svc.loadbalancer.server.port=5000" # Match the internal PORT your app uses
 
   data-loader:
-    build: ./dumper
+    image: ${DATA_LOADER_IMAGE_NAME}
     container_name: clogged_data_loader_staging
     restart: "no"
     profiles: ["tools"]
@@ -105,9 +103,7 @@ services:
       - app-network-staging
 
   worker:
-    build:
-      context: ./server
-      dockerfile: Dockerfile.prod
+    image: ${WORKER_IMAGE_NAME}
     container_name: clogged_worker_staging
     restart: always
     command: [ "node", "dist/worker.js" ]
