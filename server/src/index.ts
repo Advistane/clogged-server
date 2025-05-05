@@ -2,8 +2,6 @@
 import { Pool } from 'pg';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { createNpcsRouter } from './routes/npcs';
-import {createItemsRouter} from "./routes/items";
 import {createClogRouter} from "./routes/clog";
 import logger from './utils/logger';
 import {pinoHttp} from "pino-http";
@@ -78,9 +76,6 @@ app.get('/healthz', async (req, res) => {
 	}
 });
 
-// Use the NPCs router for /api/npcs routes
-app.use('/api/npcs', createNpcsRouter(pool));
-app.use('/api/items', createItemsRouter(pool));
 app.use('/api/clog', createClogRouter(pool));
 
 // Error handling middleware
