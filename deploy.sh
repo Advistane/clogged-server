@@ -49,6 +49,27 @@ git clean -fd
 # --- Run Database Migrations ---
 echo "Running database migrations..."
 echo "APP_DB_USER = ${APP_DB_USER}"
+
+echo "--- DEBUG: Checking filesystem and context inside migration container ---"
+docker compose -f "${COMPOSE_FILE}" run --rm \
+  -e PGHOST="db" \
+  -e PGPORT=5432 \
+  -e PGDATABASE="${POSTGRES_DB}" \
+  -e PGUSER="${APP_DB_USER}" \
+  -e PGPASSWORD="${APP_DB_PASSWORD}" \
+  server sh -c 'echo "*** Inside Container ***"; \
+                echo "Running as user: $(whoami)"; \
+                echo "Current directory: $(pwd)"; \
+                echo "--- Listing /app/server: ---"; \
+                ls -la /app/server; \
+                echo "--- Listing /app/server/migrations (if exists): ---"; \
+                ls -la /app/server/migrations; \
+                echo "*** End Inside Container ***"'
+
+echo "DEBUG: Filesystem check finished. Stopping script for debugging."
+exit 1 # Stop the script here during debugging
+
+
 # Use 'run --rm' to start a temporary container based on the 'server' service definition
 # Pass the necessary PG* environment variables mapped from your DB* variables
 docker compose -f "${COMPOSE_FILE}" run --rm \
