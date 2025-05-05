@@ -55,8 +55,8 @@ docker compose -f "${COMPOSE_FILE}" run --rm \
   -e PGHOST="db" \
   -e PGPORT=5432 \
   -e PGDATABASE="${POSTGRES_DB}" \
-  -e PGUSER="${APP_DB_USER}" \
-  -e PGPASSWORD="${APP_DB_PASSWORD}" \
+  -e PGUSER="${POSTGRES_USER}" \
+  -e PGPASSWORD="${POSTGRES_PASSWORD}" \
   server npm run migrate:up
 
 echo "Building Docker images using ${COMPOSE_FILE}..."
