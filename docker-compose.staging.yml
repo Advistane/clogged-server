@@ -54,7 +54,7 @@ services:
 
   server:
     build:
-      context: .
+      context: ./server
       dockerfile: Dockerfile.prod
     container_name: clogged_server_staging
     restart: always
@@ -106,7 +106,7 @@ services:
 
   worker:
     build:
-      context: .
+      context: ./server
       dockerfile: Dockerfile.prod
     container_name: clogged_worker_staging
     restart: always
