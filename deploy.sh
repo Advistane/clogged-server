@@ -46,9 +46,6 @@ git fetch origin "${TARGET_BRANCH}"
 git reset --hard origin/"${TARGET_BRANCH}"
 git clean -fd
 
-echo "Building Docker images using ${COMPOSE_FILE}..."
-docker compose -f "${COMPOSE_FILE}" build
-
 # --- Run Database Migrations ---
 echo "Running database migrations..."
 # Use 'run --rm' to start a temporary container based on the 'server' service definition
@@ -60,6 +57,9 @@ docker compose -f "${COMPOSE_FILE}" run --rm \
   -e PGUSER="${APP_DB_USER}" \
   -e PGPASSWORD="${APP_DB_PASSWORD}" \
   server npm run migrate:up
+
+echo "Building Docker images using ${COMPOSE_FILE}..."
+docker compose -f "${COMPOSE_FILE}" build
 
 docker compose -f "${COMPOSE_FILE}" down --remove-orphans
 
