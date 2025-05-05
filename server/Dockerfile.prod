@@ -4,10 +4,10 @@
 # ---- Builder Stage ----
 FROM node:20 AS builder
 WORKDIR /app/server
-COPY package*.json ./
-COPY migrations ./migrations
+COPY server/package*.json ./
+COPY server/migrations ./migrations
 RUN npm ci
-COPY . .
+COPY server/. ./
 RUN npm run build
 
 # ---- Production Stage ----
