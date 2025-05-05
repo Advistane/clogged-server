@@ -46,14 +46,24 @@ git fetch origin "${TARGET_BRANCH}"
 git reset --hard origin/"${TARGET_BRANCH}"
 git clean -fd
 
-echo "Building Docker images using ${COMPOSE_FILE}..."
-docker compose -f "${COMPOSE_FILE}" build
+echo "Building Docker images using ${COMPOSE_FILE} (no cache)..."
+# Add the --no-cache flag
+docker compose -f "${COMPOSE_FILE}" build --no-cache
 
 docker compose -f "${COMPOSE_FILE}" down --remove-orphans
 
 # Start new services using the correct compose file
 echo "Starting new services using ${COMPOSE_FILE}..."
 docker compose -f "${COMPOSE_FILE}" up -d
+
+echo "Starting database migrations..."
+docker compose -f "${COMPOSE_FILE}" run --rm \
+  -e PGHOST="db" \
+  -e PGPORT=5432 \
+  -e PGDATABASE="${POSTGRES_DB}" \
+  -e PGUSER="${POSTGRES_USER}" \
+  -e PGPASSWORD="${POSTGRES_PASSWORD}" \
+  server npm run migrate:up
 
 # Prune unused Docker images (optional)
 echo "Pruning old Docker images..."
