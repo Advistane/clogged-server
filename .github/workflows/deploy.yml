@@ -48,6 +48,8 @@ jobs:
             export GF_SECURITY_ADMIN_PASSWORD=${{ secrets.GF_SECURITY_ADMIN_PASSWORD }}
             export GF_SERVER_ROOT_URL=${{ secrets.GF_SERVER_ROOT_URL }}
             export ACME_EMAIL=${{ secrets.ACME_EMAIL }}
+            export APP_DB_USER=${{ secrets.APP_DB_USER }}
+            export APP_DB_PASSWORD=${{ secrets.APP_DB_PASSWORD }}
             
             echo "Executing deployment script on $host for branch $DEPLOY_BRANCH"
             cd $APP_DEPLOY_PATH
