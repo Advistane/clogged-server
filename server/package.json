@@ -8,7 +8,10 @@
     "dev": "nodemon -L src/index.ts",
     "dev:worker": "nodemon -L src/worker.ts",
     "build": "tsc",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "migrate:create": "node-pg-migrate -m migrations create",
+    "migrate:up": "node-pg-migrate -m migrations up",
+    "migrate:down": "node-pg-migrate -m migrations down"
   },
   "type": "commonjs",
   "dependencies": {
@@ -32,6 +35,7 @@
     "@types/node": "^22.15.2",
     "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.11.14",
+    "node-pg-migrate": "^7.9.1",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
