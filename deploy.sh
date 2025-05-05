@@ -48,6 +48,7 @@ git clean -fd
 
 # --- Run Database Migrations ---
 echo "Running database migrations..."
+echo "APP_DB_USER = ${APP_DB_USER}"
 # Use 'run --rm' to start a temporary container based on the 'server' service definition
 # Pass the necessary PG* environment variables mapped from your DB* variables
 docker compose -f "${COMPOSE_FILE}" run --rm \
