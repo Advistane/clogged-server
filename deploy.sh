@@ -46,8 +46,9 @@ git fetch origin "${TARGET_BRANCH}"
 git reset --hard origin/"${TARGET_BRANCH}"
 git clean -fd
 
-echo "Building Docker images using ${COMPOSE_FILE}..."
-docker compose -f "${COMPOSE_FILE}" build
+echo "Building Docker images using ${COMPOSE_FILE} (no cache)..."
+# Add the --no-cache flag
+docker compose -f "${COMPOSE_FILE}" build --no-cache
 
 docker compose -f "${COMPOSE_FILE}" down --remove-orphans
 
