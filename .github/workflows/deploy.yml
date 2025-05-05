@@ -58,6 +58,8 @@ jobs:
           push: true
           tags: ${{ steps.image_meta.outputs.base_name }}/db:${{ steps.image_meta.outputs.tag }}
           outputs: type=image,name=${{ steps.image_meta.outputs.base_name }}/db,push=true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Build and Push Server Image
         id: build_server
@@ -68,6 +70,8 @@ jobs:
           push: true
           tags: ${{ steps.image_meta.outputs.base_name }}/server:${{ steps.image_meta.outputs.tag }}
           outputs: type=image,name=${{ steps.image_meta.outputs.base_name }}/server,push=true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Build and Push Data Loader Image
         id: build_dataloader
@@ -78,6 +82,8 @@ jobs:
           push: true
           tags: ${{ steps.image_meta.outputs.base_name }}/data-loader:${{ steps.image_meta.outputs.tag }}
           outputs: type=image,name=${{ steps.image_meta.outputs.base_name }}/data-loader,push=true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Build and Push Worker Image
         id: build_worker
@@ -88,6 +94,8 @@ jobs:
           push: true
           tags: ${{ steps.image_meta.outputs.base_name }}/worker:${{ steps.image_meta.outputs.tag }} # Using distinct tag for worker
           outputs: type=image,name=${{ steps.image_meta.outputs.base_name }}/worker,push=true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
     name: Deploy to ${{ github.ref_name == 'main' && 'Production' || 'Staging' }}
@@ -136,6 +144,7 @@ jobs:
             export APP_DB_PASSWORD=${{ secrets.APP_DB_PASSWORD }}
             export POSTGRES_USER=${{ secrets.POSTGRES_USER }}
             export POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            export ENDPOINT_SECRET_KEY=${{ secrets.ENDPOINT_SECRET_KEY }}
             
             export DB_IMAGE_NAME="${{ needs.build-and-push.outputs.db_image }}"
             export SERVER_IMAGE_NAME="${{ needs.build-and-push.outputs.server_image }}"
