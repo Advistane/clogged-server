@@ -18,6 +18,14 @@ for var in "${required_vars[@]}"; do
     fi
 done
 
+echo "--- DEBUG: Checking critical variables before compose up ---"
+echo "GRAFANA_HOSTNAME='${GRAFANA_HOSTNAME}'" # Check if set and correct
+echo "APP_HOSTNAME='${APP_HOSTNAME}'"
+echo "ACME_EMAIL='${ACME_EMAIL}'"
+echo "GF_SERVER_ROOT_URL='${GF_SERVER_ROOT_URL}'"
+# Add any other essential vars used in docker-compose.yml
+echo "--- END DEBUG ---"
+
 echo "Starting deployment..."
 echo "Target Branch: ${DEPLOY_BRANCH}"
 echo "Compose File: ${COMPOSE_FILE_NAME}"
