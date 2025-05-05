@@ -119,7 +119,6 @@ jobs:
           # Pass environment-specific info and branch name to the deploy script
           script: |
             export DEPLOY_BRANCH=${{ github.ref_name }}
-            export TARGET_BRANCH=${{ github.ref_name }}
             export COMPOSE_FILE_NAME=${{ vars.COMPOSE_FILE_NAME }}
             export APP_DEPLOY_PATH=${{ vars.DEPLOY_PATH }}
             export B2_BUCKET_NAME=${{ vars.B2_BUCKET_NAME }}
