@@ -115,6 +115,7 @@
 
 		case "kril":
 		case "kril trutsaroth":
+		case "k'ril":
 		case "zammy":
 		case "zamorak":
 			return "K'ril Tsutsaroth";
@@ -185,6 +186,10 @@
 		case "thermy":
 		case "thermey":
 			return "Thermonuclear Smoke Devil";
+
+		case "tds":
+		case "td":
+			return "Tormented Demons";
 
 		case "vard":
 		case "vardo":
