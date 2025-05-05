@@ -32,6 +32,8 @@ enums = [
     },
 ]
 
+item_replacements = {}
+
 async def fetch_json(session: aiohttp.ClientSession, url: str) -> dict:
     try:
         async with session.get(url) as response:
@@ -42,15 +44,24 @@ async def fetch_json(session: aiohttp.ClientSession, url: str) -> dict:
         return {}
 
 
-def get_enum_data(enum_id) -> dict:
-    enum_url = "https://chisel.weirdgloop.org/structs/enums/{}.json".format(enum_id)
+async def fetch_enum_data(session: aiohttp.ClientSession, enum_id: int) -> dict:
+    enum_url = f"https://chisel.weirdgloop.org/structs/enums/{enum_id}.json"
     try:
-        response = requests.get(enum_url)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as e:
-        print(f"Error fetching boss enum data: {e}")
+        async with session.get(enum_url) as response:
+            response.raise_for_status()
+            return await response.json()
+    except aiohttp.ClientError as e:
+        print(f"Error fetching enum data: {e}")
         return {}
+
+async def populate_item_replacements(session: aiohttp.ClientSession):
+    mappings = await fetch_enum_data(session, 3721)  # https://chisel.weirdgloop.org/structs/index.html?type=enums&id=3721
+    if mappings:
+        for mapping in mappings.get("rows", []):
+            from_item_id = mapping.get("raw_key")
+            to_item_id = mapping.get("raw_val")
+            if from_item_id is not None and to_item_id is not None:
+                item_replacements[from_item_id] = to_item_id
 
 async def lookup_item_enum(session: aiohttp.ClientSession, enum_id: int) -> list[Any]:
     lookup_url = f"https://chisel.weirdgloop.org/structs/enums/{enum_id}.json"
@@ -60,6 +71,10 @@ async def lookup_item_enum(session: aiohttp.ClientSession, enum_id: int) -> list
         item_id = entry.get("raw_val")
         item_name = entry.get("parsed_val", {}).get("text")
         if item_id is not None and item_name is not None:
+            # Check if the item ID is in the replacements dictionary
+            if item_id in item_replacements:
+                item_id = item_replacements[item_id]
+                print(f"Replaced item ID {entry.get('raw_val')} with {item_id}")
             items.append({"id": item_id, "name": item_name})
     return items
 
@@ -77,6 +92,7 @@ async def lookup_subcategory_struct(session: aiohttp.ClientSession, struct_id: i
 
 async def process_all_enum_data() -> list[Any]:
     async with aiohttp.ClientSession() as session:
+        await populate_item_replacements(session)
         tasks = []
         for enum in enums:
             print(f"Processing {enum['name']}")
