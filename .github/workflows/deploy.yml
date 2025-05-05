@@ -129,6 +129,7 @@ jobs:
             export DEPLOY_BRANCH=${{ github.ref_name }}
             export COMPOSE_FILE_NAME=${{ vars.COMPOSE_FILE_NAME }}
             export APP_DEPLOY_PATH=${{ vars.DEPLOY_PATH }}
+            export ENV_FILE_PATH="$APP_DEPLOY_PATH/.env"
             export B2_BUCKET_NAME=${{ vars.B2_BUCKET_NAME }}
             export B2_ENDPOINT=${{ vars.B2_ENDPOINT }}
             export B2_REGION=${{ vars.B2_REGION }}
@@ -159,3 +160,42 @@ jobs:
             echo "Executing deployment script on $host for branch $DEPLOY_BRANCH"
             cd $APP_DEPLOY_PATH
             ./deploy.sh # Execute the deployment script
+            
+            # --- Create .env file for manual use AFTER deployment ---
+            echo "Creating/Updating $ENV_FILE_PATH for manual docker compose commands..."
+          
+            # Use CORRECT printf format: "%s=\"%s\"\n" to quote values
+            # Overwrite file with first variable
+            printf "%s=\"%s\"\n" "POSTGRES_USER" "${{ secrets.POSTGRES_USER }}" > "$ENV_FILE_PATH" || { echo "ERROR: Failed to write to $ENV_FILE_PATH"; exit 1; }
+            # Append subsequent variables
+              printf "%s=\"%s\"\n" "POSTGRES_PASSWORD" "${{ secrets.POSTGRES_PASSWORD }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "POSTGRES_DB" "${{ vars.POSTGRES_DB }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "APP_DB_USER" "${{ secrets.APP_DB_USER }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "APP_DB_PASSWORD" "${{ secrets.APP_DB_PASSWORD }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "ACME_EMAIL" "${{ secrets.ACME_EMAIL }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "APP_HOSTNAME" "${{ vars.APP_HOSTNAME }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "GRAFANA_HOSTNAME" "${{ vars.GRAFANA_HOSTNAME }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "GF_SECURITY_ADMIN_USER" "${{ secrets.GF_SECURITY_ADMIN_USER }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "GF_SECURITY_ADMIN_PASSWORD" "${{ secrets.GF_SECURITY_ADMIN_PASSWORD }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "GF_SERVER_ROOT_URL" "${{ vars.GF_SERVER_ROOT_URL }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "GF_USERS_ALLOW_SIGN_UP" "${{ vars.GF_USERS_ALLOW_SIGN_UP }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "GF_AUTH_ANONYMOUS_ENABLED" "${{ vars.GF_AUTH_ANONYMOUS_ENABLED }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "B2_ACCESS_KEY_ID" "${{ secrets.B2_ACCESS_KEY_ID }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "B2_SECRET_ACCESS_KEY" "${{ secrets.B2_SECRET_ACCESS_KEY }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "B2_ENDPOINT" "${{ vars.B2_ENDPOINT }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "B2_REGION" "${{ vars.B2_REGION }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "B2_BUCKET_NAME" "${{ vars.B2_BUCKET_NAME }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "ENDPOINT_SECRET_KEY" "${{ secrets.ENDPOINT_SECRET_KEY }}" >> "$ENV_FILE_PATH"
+              # Include Image Names if your docker-compose.yml uses substitution for them
+              printf "%s=\"%s\"\n" "DB_IMAGE_NAME" "${{ needs.build-and-push.outputs.db_image || '' }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "SERVER_IMAGE_NAME" "${{ needs.build-and-push.outputs.server_image || '' }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "DATA_LOADER_IMAGE_NAME" "${{ needs.build-and-push.outputs.dataloader_image || '' }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "WORKER_IMAGE_NAME" "${{ needs.build-and-push.outputs.worker_image || '' }}" >> "$ENV_FILE_PATH"
+              
+              # --- Set secure permissions ---
+              chmod 600 "$ENV_FILE_PATH"
+              echo ".env file created/updated successfully at $ENV_FILE_PATH"
+
+            # --- Set secure permissions ---
+            chmod 600 "$ENV_FILE_PATH"
+            echo ".env file created/updated successfully at $ENV_FILE_PATH"

@@ -89,7 +89,6 @@ services:
     image: ${DATA_LOADER_IMAGE_NAME}
     container_name: clogged_data_loader_staging
     restart: "no"
-    profiles: ["tools"]
     environment:
       DB_HOST: db
       DB_PORT: 5432

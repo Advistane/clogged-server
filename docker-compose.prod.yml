@@ -100,7 +100,6 @@ services:
     build: ./dumper
     container_name: clogged_data_loader_prod
     restart: "no"
-    profiles: ["tools"]
     environment:
       DB_HOST: db
       DB_PORT: 5432
