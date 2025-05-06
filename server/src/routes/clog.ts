@@ -317,6 +317,7 @@ export const createClogRouter = (pool: Pool) => {
                 p.accounthash,
                 s.id AS subcategory_id,
                 s.name AS validated_subcategory_name,
+                s.total AS total,
                 COALESCE(pkc.kc, 0) AS kc
             FROM
                 players p
@@ -335,8 +336,8 @@ export const createClogRouter = (pool: Pool) => {
 				return;
 			}
 
-			const { accounthash: accountHash, subcategory_id: subcategoryId, validated_subcategory_name: validatedSubcategoryName, kc } = metadataResult.rows[0];
-			log.debug({ username, subcategoryAliased, accountHash, subcategoryId, validatedSubcategoryName, kc }, 'Metadata fetched');
+			const { accounthash: accountHash, subcategory_id: subcategoryId, validated_subcategory_name: validatedSubcategoryName, total, kc } = metadataResult.rows[0];
+			log.debug({ username, subcategoryAliased, accountHash, subcategoryId, validatedSubcategoryName, total, kc }, 'Metadata fetched');
 
 			// --- Query 2: Fetch Items (Owned or Missing) ---
 			let itemsResult;
@@ -376,6 +377,7 @@ export const createClogRouter = (pool: Pool) => {
 			const response = {
 				kc: Number(kc),
 				subcategoryName: validatedSubcategoryName,
+				total: Number(total),
 				items,
 			};
 

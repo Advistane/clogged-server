@@ -44,15 +44,15 @@ def upsert_categories(conn):
         logging.error(f"Database error during upsert of categories: {e}")
         conn.rollback() # Roll back the transaction on error
 
-def upsert_subcategory(conn, subcategory_id: int, subcategory_name: str, category_id: int):
+def upsert_subcategory(conn, subcategory_id: int, subcategory_name: str, category_id: int, total: int):
     sql = """
-        INSERT INTO subcategories (id, name, categoryid)
-        VALUES (%s, %s, %s)
+        INSERT INTO subcategories (id, name, categoryid, total)
+        VALUES (%s, %s, %s, %s)
         ON CONFLICT (id) DO NOTHING ;
     """
     try:
         with conn.cursor() as cur:
-            cur.execute(sql, (subcategory_id, subcategory_name, category_id))
+            cur.execute(sql, (subcategory_id, subcategory_name, category_id, total))
             conn.commit()
             logging.info(f"Upserted subcategory {subcategory_id}: {subcategory_name}")
     except psycopg2.Error as e:
@@ -89,7 +89,7 @@ def update_db(data_dump: list):
                 category_id = data["categoryId"]
 
                 logging.info(f"Processing {name} with ID {subcategory_id}")
-                upsert_subcategory(conn, subcategory_id, name, category_id)
+                upsert_subcategory(conn, subcategory_id, name, category_id, len(items))
                 upsert_subcategory_items(conn, subcategory_id, items)
         finally:
             conn.close()
