@@ -61,6 +61,7 @@ services:
   # Express TypeScript Backend
   server:
     image: ${SERVER_IMAGE_NAME}
+    container_name: clogged_server_prod
     restart: always
     environment:
       NODE_ENV: production
