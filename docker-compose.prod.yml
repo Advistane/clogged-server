@@ -39,7 +39,7 @@ services:
 
   # PostgreSQL Database
   db:
-    build: ./database
+    image: ${DB_IMAGE_NAME}
     container_name: clogged_db_prod
     restart: always
     environment:
@@ -60,10 +60,7 @@ services:
 
   # Express TypeScript Backend
   server:
-    build:
-      context: ./server
-      dockerfile: Dockerfile.prod
-    container_name: clogged_server_prod
+    image: ${SERVER_IMAGE_NAME}
     restart: always
     environment:
       NODE_ENV: production
@@ -97,7 +94,7 @@ services:
 
   # Data Loader
   data-loader:
-    build: ./dumper
+    image: ${DATA_LOADER_IMAGE_NAME}
     container_name: clogged_data_loader_prod
     restart: "no"
     environment:
@@ -113,9 +110,7 @@ services:
       - app-network
 
   worker:
-    build:
-      context: ./server
-      dockerfile: Dockerfile.prod
+    image: ${WORKER_IMAGE_NAME}
     container_name: clogged_worker_prod
     restart: always
     command: [ "node", "dist/worker.js" ]
