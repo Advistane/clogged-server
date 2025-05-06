@@ -108,48 +108,27 @@ services:
     networks:
       - app-network-local
 
-  # --- Logging Stack (Local Dev Version) ---
-
-  loki:
-    image: grafana/loki:3.4.1
-    container_name: loki_local
-    restart: always
-    command: -config.file=/etc/loki/loki-config.yaml
-    volumes:
-      - ./logging/loki-config-local.yaml:/etc/loki/loki-config.yaml:ro
-    networks:
-      - app-network-local
-
-  promtail:
-    image: grafana/promtail:3.4.1
-    container_name: promtail_local
-    restart: always
-    command: -config.file=/etc/promtail/promtail-config.yaml
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./logging/promtail-config-local.yaml:/etc/promtail/promtail-config.yaml:ro
-    depends_on:
-      - loki
-    networks:
-      - app-network-local
-
-  grafana:
-    image: grafana/grafana:11.6.1
-    container_name: grafana_local
-    restart: always
-    ports:
-      - "3000:3000"
+  migrator:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.dev
+    container_name: clogged_migrator
+    command: npm run migrate:up
     environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
-      - GF_USERS_ALLOW_SIGN_UP=false
+      PGHOST: db                     # Use the service name 'db'
+      PGPORT: 5432                   # Standard PG Port
+      PGUSER: ${POSTGRES_USER}         # Use the App User (ensure this user has migration permissions)
+      PGPASSWORD: ${POSTGRES_PASSWORD}   # App User Password
+      PGDATABASE: ${POSTGRES_DB}       # The Database Name
+      DB_NAME: ${POSTGRES_DB}
     volumes:
-      - ./logging/grafana-datasources-staging.yaml:/etc/grafana/provisioning/datasources/loki-datasource.yaml:ro
+      - ./server:/app/server
+      - /app/server/node_modules
     depends_on:
-      - loki
+      db:
+        condition: service_healthy
     networks:
       - app-network-local
-
 
 volumes:
   postgres_data:

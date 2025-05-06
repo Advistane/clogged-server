@@ -1,7 +1,6 @@
 ﻿import logging
 import os
 import psycopg2
-from pathlib import Path
 
 from psycopg2.extras import execute_values
 
@@ -18,14 +17,6 @@ DB_CONFIG = {
     "host": DB_HOST,
     "port": DB_PORT
 }
-
-SCRIPT_DIR = Path(__file__).parent.resolve() # This will be /app in the container
-SOURCE_DIRS = {
-    "items": SCRIPT_DIR / "items",
-    "npcs": SCRIPT_DIR / "npcs"
-}
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def connect_db():
     """Establishes a connection to the PostgreSQL database."""
@@ -57,8 +48,7 @@ def upsert_subcategory(conn, subcategory_id: int, subcategory_name: str, categor
     sql = """
         INSERT INTO subcategories (id, name, categoryid)
         VALUES (%s, %s, %s)
-        ON CONFLICT (id) DO UPDATE
-        SET name = EXCLUDED.name;
+        ON CONFLICT (id) DO NOTHING ;
     """
     try:
         with conn.cursor() as cur:
@@ -70,15 +60,15 @@ def upsert_subcategory(conn, subcategory_id: int, subcategory_name: str, categor
         conn.rollback() # Roll back the transaction on error
 
 def upsert_subcategory_items(conn, subcategory_id: int, items: list):
-    print(items)
+    logging.info(f"Upserting items for subcategory {subcategory_id}: {items}")
     sql = """
-        INSERT INTO subcategory_items (subcategoryid, itemid, itemname)
+        INSERT INTO subcategory_items (subcategoryid, itemid)
         VALUES %s
         ON CONFLICT (subcategoryid, itemid) DO NOTHING;
     """
     try:
         with conn.cursor() as cur:
-            execute_values(cur, sql, [(subcategory_id, item["id"], item["name"]) for item in items])
+            execute_values(cur, sql, [(subcategory_id, item) for item in items])
             conn.commit()
             logging.info(f"Upserted items for subcategory {subcategory_id}")
     except psycopg2.Error as e:
@@ -93,10 +83,10 @@ def update_db(data_dump: list):
         try:
             upsert_categories(conn)
             for data in data_dump:
-                name = data["name"]
+                name = data["subcategoryName"]
                 items = data["items"]
-                subcategory_id = data["subcategory_id"]
-                category_id = data["category_id"]
+                subcategory_id = data["subcategoryId"]
+                category_id = data["categoryId"]
 
                 logging.info(f"Processing {name} with ID {subcategory_id}")
                 upsert_subcategory(conn, subcategory_id, name, category_id)
