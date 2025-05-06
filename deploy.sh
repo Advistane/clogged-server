@@ -72,7 +72,14 @@ docker compose -f "${COMPOSE_FILE_NAME}" down --remove-orphans
 # --- Start new services ---
 echo "Starting new services using ${COMPOSE_FILE_NAME}..."
 # docker-compose will use the images pulled previously
-docker compose -f "${COMPOSE_FILE_NAME}" up -d
+docker compose -f "${COMPOSE_FILE_NAME}" up -d --force-recreate --remove-orphans
+
+echo "--- Inspecting Running Container Images ---"
+docker inspect clogged_server_prod | grep '"Image":' # Check for your main app server
+docker inspect clogged_worker_prod | grep '"Image":' # Check for your worker
+docker inspect grafana_prod | grep '"Image":'
+docker inspect traefik_prod | grep '"Image":'
+echo "--------------------------------------"
 
 # --- Run Database Migrations ---
 # Check if the server service exists before trying to run migrations
