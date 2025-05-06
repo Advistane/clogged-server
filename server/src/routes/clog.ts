@@ -17,6 +17,11 @@ export interface CollectionLogItem {
 	name: string;
 }
 
+interface CollectionLogItemOutput {
+	itemId: number;
+	quantity: number;
+}
+
 export const createClogRouter = (pool: Pool) => {
 	const router = Router();
 
@@ -262,27 +267,17 @@ export const createClogRouter = (pool: Pool) => {
 	})
 
 	router.get('/:username/:subcategoryName', async (req, res): Promise<any> => {
+		const log = req.log;
 		const username: string = decodeURIComponent(req.params.username);
 		const subcategoryName: string = req.params.subcategoryName;
-		let subcategoryAliased: string = getSubcategoryAlias(subcategoryName);
-		const log = req.log;
+		const mode: string = (req.query.mode as string) || 'owned';
 
-		if (!isNaN(Number(subcategoryName))) {
-			const client = await pool.connect();
-			const result = await client.query(`SELECT name
-                                               FROM subcategories
-                                               WHERE id = $1`, [subcategoryName]);
-			if (result.rows.length > 0) {
-				subcategoryAliased = result.rows[0].name;
-				log.info({username, subcategoryName, subcategoryAliased}, 'Subcategory name found by ID');
-				client.release();
-			}
-
-			log.warn({
-				username,
-				subcategoryName
-			}, 'Subcategory name should not be a number and this is deprecated. Please use the subcategory name instead of ID.');
+		if (mode !== 'owned' && mode !== 'missing') {
+			log.warn({username, mode}, 'Invalid mode parameter');
+			return res.status(400).send("Invalid 'mode' parameter. Must be 'owned' or 'missing'.");
 		}
+
+		let subcategoryAliased: string = getSubcategoryAlias(subcategoryName);
 
 		log.info({username, subcategoryAliased}, 'Fetching collection log data request');
 
@@ -292,79 +287,109 @@ export const createClogRouter = (pool: Pool) => {
 		}
 
 		// Check cache first
-		const cacheKey = `clog:${username}:${subcategoryAliased}`;
+		const cacheKey = `clog:${username}:${subcategoryAliased}:${mode}`;
 		const cacheTTLSeconds = 10;
 		// --- 1. Check Redis Cache First ---
 		try {
 			const cachedDataString = await redisConnection.get(cacheKey);
 			if (cachedDataString) {
-				log.debug({cacheKey}, 'Redis cache hit');
+				log.debug({username, cacheKey}, 'Redis cache hit');
 				try {
 					const cachedData = JSON.parse(cachedDataString);
 					return res.json(cachedData); // Return cached data
 				} catch (parseError) {
-					log.error({parseError, cacheKey}, "Failed to parse cached data from Redis");
+					log.error({username, parseError, cacheKey}, "Failed to parse cached data from Redis");
 					// Proceed to fetch from DB if parsing fails
 				}
 			} else {
-				log.debug({cacheKey}, 'Redis cache miss');
+				log.debug({username, cacheKey}, 'Redis cache miss');
 			}
 		} catch (redisError) {
 			// Log Redis error but proceed to DB query as a fallback
-			log.error({redisError, cacheKey}, 'Redis GET command failed, falling back to DB');
+			log.error({username, redisError, cacheKey}, 'Redis GET command failed, falling back to DB');
 		}
 
 		const client = await pool.connect();
-
 		try {
-			const result = await client.query<CollectionLogItem>(
-				`SELECT pi.itemid,
-                        pi.quantity,
-                        pkc.kc,
-                        s.name
-                 FROM player_items pi
-                          JOIN subcategories s ON s.name = $2
-                          JOIN players p ON pi.accountHash = p.accountHash
-                          JOIN subcategory_items sci ON sci.subcategoryid = s.id AND sci.itemid = pi.itemid
-                          LEFT JOIN player_kc pkc
-                                    ON pkc.accountHash = p.accountHash AND pkc.subcategoryId = s.id AND pkc.kc != -1
-                 WHERE p.username ILIKE $1`,
-				[username, subcategoryAliased]
-			);
+			// --- Query 1: Fetch Metadata (Player, Subcategory, KC) ---
+			const metadataQuery = `
+            SELECT
+                p.accounthash,
+                s.id AS subcategory_id,
+                s.name AS validated_subcategory_name,
+                s.total AS total,
+                COALESCE(pkc.kc, 0) AS kc
+            FROM
+                players p
+            JOIN
+                subcategories s ON s.name = $2 -- Use subcategoryAliased
+            LEFT JOIN
+                player_kc pkc ON pkc.accounthash = p.accounthash AND pkc.subcategoryId = s.id AND pkc.kc != -1
+            WHERE
+                p.username ILIKE $1;
+        `;
+			const metadataResult = await client.query(metadataQuery, [username, subcategoryAliased]);
 
-			const items = result.rows.map(row => ({
-				itemId: row.itemid,
-				quantity: row.quantity,
-			}));
-
-			const kc = result.rows.length > 0 ? result.rows[0].kc || 0 : 0;
-			const subcategoryName = result.rows.length > 0 ? result.rows[0].name : null;
-			if (!subcategoryName) {
-				log.warn({username, subcategoryName}, 'No data found for the given username and subcategory');
-				res.status(404).send('No data found');
+			if (metadataResult.rows.length === 0) {
+				log.warn({ username, subcategoryAliased }, 'Metadata not found: Player or Subcategory does not exist, or combination is invalid.');
+				res.status(404).send('Player or Subcategory not found.');
 				return;
 			}
 
+			const { accounthash: accountHash, subcategory_id: subcategoryId, validated_subcategory_name: validatedSubcategoryName, total, kc } = metadataResult.rows[0];
+			log.debug({ username, subcategoryAliased, accountHash, subcategoryId, validatedSubcategoryName, total, kc }, 'Metadata fetched');
+
+			// --- Query 2: Fetch Items (Owned or Missing) ---
+			let itemsResult;
+			const items: CollectionLogItemOutput[] = [];
+
+			if (mode === 'owned') {
+				const ownedItemsQuery = `
+                SELECT pi.itemid, pi.quantity
+                FROM player_items pi
+                JOIN subcategory_items sci ON sci.itemid = pi.itemid
+                WHERE pi.accounthash = $1 AND sci.subcategoryid = $2;
+            `;
+				itemsResult = await client.query(ownedItemsQuery, [accountHash, subcategoryId]);
+				itemsResult.rows.forEach(row => {
+					items.push({ itemId: row.itemid, quantity: row.quantity });
+				});
+			} else { // mode === 'missing'
+				const missingItemsQuery = `
+                SELECT sci.itemid
+                FROM subcategory_items sci
+                WHERE sci.subcategoryid = $1
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM player_items pi
+                    WHERE pi.accounthash = $2
+                    AND pi.itemid = sci.itemid
+                );
+            `;
+				itemsResult = await client.query(missingItemsQuery, [subcategoryId, accountHash]);
+				itemsResult.rows.forEach(row => {
+					items.push({ itemId: row.itemid, quantity: 1 }); // Missing items have quantity 0
+				});
+			}
+			log.debug({ username, subcategoryAliased, mode, itemCount: items.length }, 'Items fetched');
+
+			// --- Response Construction ---
 			const response = {
-				kc,
-				subcategoryName,
+				kc: Number(kc),
+				subcategoryName: validatedSubcategoryName,
+				total: Number(total),
 				items,
 			};
 
+			// --- Cache Storage ---
 			try {
 				const responseString = JSON.stringify(response);
-				// Use 'EX' for TTL in seconds
 				await redisConnection.set(cacheKey, responseString, 'EX', cacheTTLSeconds);
-				log.debug({cacheKey, ttl: cacheTTLSeconds}, 'Result stored in Redis cache');
+				log.debug({ cacheKey, ttl: cacheTTLSeconds }, 'Result stored in Redis cache');
 			} catch (redisSetError) {
-				// Log error but don't fail the request if caching fails
-				log.error(
-					{err: redisSetError, cacheKey: cacheKey}, // Pino recognizes 'err'
-					'Redis SET command failed' // Your descriptive message
-				);
+				log.error({ err: redisSetError, cacheKey }, 'Redis SET command failed');
 			}
 
-			log.debug({username, subcategoryName, subcategoryAliased}, 'Data fetched and cached');
 			res.json(response);
 		} catch (err) {
 			log.error(err, 'Error querying items');

@@ -58,6 +58,7 @@ const processClogUpdate = async (job: Job<UserCollectionData>) => {
 				ON CONFLICT (accountHash) DO UPDATE SET username = EXCLUDED.username;
 			`;
 		await client.query(playerInsertQuery, [accountHash, username]);
+		await client.query('COMMIT'); // Commit transaction
 
 		log.info(`Processing collected items for accountHash: ${accountHash}...`);
 		for (const collectedItem of collectedItems) {
