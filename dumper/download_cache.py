@@ -114,6 +114,13 @@ def delete_files():
         except Exception as e:
             logging.error(f"Error deleting directory 'dump': {e}")
 
+    if os.path.isdir('images'):
+        try:
+            shutil.rmtree('images')
+            logging.info("Deleted directory: images")
+        except Exception as e:
+            logging.error(f"Error deleting directory 'images': {e}")
+
     # Delete all files in the current directory
     for filename in os.listdir('.'):
         if filename.endswith('.tar.gz'):
