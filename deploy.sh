@@ -32,18 +32,11 @@ if [ ! -f "$COMPOSE_FILE_NAME" ]; then
      exit 1
 fi
 
-# --- Update Code (Optional but good practice) ---
-# If your deploy.sh script itself or other config files (like loki/promtail)
-# are part of the repo, you still need to pull them.
 echo "Pulling latest configuration files from origin/${DEPLOY_BRANCH}..."
-# Stash local changes if any, fetch, reset, clean
-# Be CAREFUL if you have manually modified files on the server you want to keep
-# git stash push -m "Pre-deploy stash $(date)" || true # Stash uncommitted changes
 git fetch origin "${DEPLOY_BRANCH}"
 git reset --hard origin/"${DEPLOY_BRANCH}"
-git clean -fd # Remove untracked files/dirs
+git clean -fd
 
-# --- Log in to GitHub Container Registry ---
 echo "Logging in to GitHub Container Registry (ghcr.io)..."
 echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
 
@@ -56,10 +49,6 @@ docker compose -f "${COMPOSE_FILE_NAME}" pull
 echo "Stopping and removing existing services..."
 # Use --remove-orphans to clean up containers from services removed from the compose file
 docker compose -f "${COMPOSE_FILE_NAME}" down --remove-orphans
-
-# --- Build step is REMOVED ---
-# echo "Building Docker images using ${COMPOSE_FILE_NAME} (no cache)..." # REMOVED
-# docker compose -f "${COMPOSE_FILE_NAME}" build --no-cache            # REMOVED
 
 # --- Start new services ---
 echo "Starting new services using ${COMPOSE_FILE_NAME}..."
