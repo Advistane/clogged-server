@@ -4,6 +4,8 @@ import logging
 
 from typing import Any
 
+import requests
+
 enums = [
     {
         "id": 2103,
@@ -32,6 +34,7 @@ enums = [
     },
 ]
 
+item_names_dict = {}
 item_replacements = {}
 
 def get_enum_data(enum_id: int) -> list[tuple[Any, Any]]:
@@ -124,10 +127,16 @@ def process_items(subcategory_name: str, subcategory_id: int, items_enum: int, c
     final_items = []
 
     for item_id in item_ids:
+        item_name = item_names_dict.get(item_id, None)
         final_item_id = item_replacements.get(item_id, item_id)
         if item_id in item_replacements:
             logging.debug(f"Replaced item ID {item_id} with {final_item_id}")
-        final_items.append(final_item_id)
+        final_item = {
+            "itemId": final_item_id,
+            "itemName": item_name if item_name else f"Unknown Item ID: {item_id}",
+            "originalItemId": item_id
+        }
+        final_items.append(final_item)
 
     return {
         "subcategoryName": subcategory_name,
@@ -135,3 +144,32 @@ def process_items(subcategory_name: str, subcategory_id: int, items_enum: int, c
         "items": final_items,
         "categoryId": category_id
     }
+
+def populate_item_dict() -> dict:
+    api_endpoint_url = "https://raw.githubusercontent.com/runelite/static.runelite.net/refs/heads/gh-pages/item/stats.json"
+
+    try:
+        response = requests.get(api_endpoint_url)
+        response.raise_for_status()
+        json_data = response.json()
+        for item_id, item_details in json_data.items():
+            if isinstance(item_details, dict) and "name" in item_details:
+                item_names_dict[int(item_id)] = item_details["name"]
+            else:
+                print(f"Warning: Item ID '{item_id}' does not have a valid 'name' attribute or is not a dictionary. Skipping.")
+
+    except requests.exceptions.HTTPError as e:
+        print(f"HTTP error occurred: {e} - Status code: {response.status_code}")
+    except requests.exceptions.ConnectionError as e:
+        print(f"Connection error occurred: {e} - Check your internet connection or the URL.")
+    except requests.exceptions.Timeout as e:
+        print(f"Request timed out: {e}")
+    except requests.exceptions.RequestException as e:
+        print(f"An error occurred during the request: {e}")
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON response: {e}")
+        print(f"Response content: {response.text[:200]}...") # Print first 200 chars for debugging
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+    return item_names_dict

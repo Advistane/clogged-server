@@ -493,6 +493,8 @@
 		case "gloughs experiment":
 		case "glough experiments":
 		case "glough experiment":
+		case "glough":
+		case "glough's":
 		case "demonics":
 		case "demonic gorilla":
 		case "demonic gorillas":

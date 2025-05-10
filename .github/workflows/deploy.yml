@@ -157,6 +157,10 @@ jobs:
             export GHCR_USER=${{ github.repository_owner }}
             export GHCR_TOKEN=${{ secrets.GHCR_TOKEN }}
             
+            export B2_IMAGES_ACCESS_KEY_ID=${{ secrets.B2_IMAGES_ACCESS_KEY_ID }}
+            export B2_IMAGES_SECRET_ACCESS_KEY=${{ secrets.B2_IMAGES_SECRET_ACCESS_KEY }}
+            export B2_IMAGES_BUCKET_NAME=${{ secrets.B2_IMAGES_BUCKET_NAME }}
+            
             echo "Executing deployment script on $host for branch $DEPLOY_BRANCH"
             cd $APP_DEPLOY_PATH
             ./deploy.sh # Execute the deployment script
