@@ -82,6 +82,7 @@ def upsert_subcategory_items(conn, subcategory_id: int, items: list):
         with conn.cursor() as cur:
             # Insert items
             execute_values(cur, sql_insert, [(subcategory_id, item["itemId"], item["itemName"], item["originalItemId"]) for item in items])
+            conn.commit()
 
             # Check for empty or NULL image_url
             cur.execute(sql_check, (subcategory_id,))

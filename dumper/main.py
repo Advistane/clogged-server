@@ -5,6 +5,7 @@ from download_cache import download_latest_cache, extract_specific_folders_tarfi
 from dump import populate_item_replacements, process_all_enums, populate_item_dict
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     asset_name = download_latest_cache()
     if asset_name:
         logging.info(f"Downloaded cache: {asset_name}")
