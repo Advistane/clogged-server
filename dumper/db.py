@@ -4,6 +4,8 @@ import psycopg2
 
 from psycopg2.extras import execute_values
 
+from images import download_image
+
 DB_NAME = os.environ.get("DB_NAME", "clogged")
 DB_USER = os.environ.get("DB_USER", "postgres")
 DB_PASSWORD = os.environ.get("DB_PASSWORD", "postgres")
@@ -59,21 +61,55 @@ def upsert_subcategory(conn, subcategory_id: int, subcategory_name: str, categor
         logging.error(f"Database error during upsert of subcategory {subcategory_id}: {e}")
         conn.rollback() # Roll back the transaction on error
 
+
 def upsert_subcategory_items(conn, subcategory_id: int, items: list):
     logging.info(f"Upserting items for subcategory {subcategory_id}: {items}")
-    sql = """
-        INSERT INTO subcategory_items (subcategoryid, itemid)
-        VALUES %s
-        ON CONFLICT (subcategoryid, itemid) DO NOTHING;
-    """
+    sql_insert = """
+                 INSERT INTO subcategory_items (subcategoryid, itemid, itemname, originalitemid)
+                 VALUES \
+                 %s
+                ON CONFLICT (subcategoryid, itemid) \
+                 DO UPDATE SET originalitemid = EXCLUDED.originalitemid, itemname = EXCLUDED.itemname;
+                 """
+
+    sql_check = """
+                SELECT originalitemid \
+                FROM subcategory_items
+                WHERE subcategoryid = %s \
+                  AND (image_url IS NULL OR image_url = ''); \
+                """
     try:
         with conn.cursor() as cur:
-            execute_values(cur, sql, [(subcategory_id, item) for item in items])
+            # Insert items
+            execute_values(cur, sql_insert, [(subcategory_id, item["itemId"], item["itemName"], item["originalItemId"]) for item in items])
+            conn.commit()
+
+            # Check for empty or NULL image_url
+            cur.execute(sql_check, (subcategory_id,))
+            missing_image_items = cur.fetchall()
+
+            if missing_image_items:
+                for item in missing_image_items:
+                    item_id = item[0]
+                    logging.info(f"Item {item_id} has no image_url. Downloading image...")
+                    public_url = download_image(item_id)
+                    if public_url:
+                        update_sql = """
+                            UPDATE subcategory_items
+                            SET image_url = %s
+                            WHERE subcategoryid = %s AND originalitemid = %s;
+                        """
+                        cur.execute(update_sql, (public_url, subcategory_id, item_id))
+                        logging.info(f"Item {item_id} has been updated with image_url: {public_url}")
+
+                print(f"Items with missing image_url: {missing_image_items}")
+                # Do something with these items (e.g., update image_url or log them)
+
             conn.commit()
             logging.info(f"Upserted items for subcategory {subcategory_id}")
     except psycopg2.Error as e:
         logging.error(f"Database error during upsert of items for subcategory {subcategory_id}: {e}")
-        conn.rollback() # Roll back the transaction on error
+        conn.rollback()  # Roll back the transaction on error
 
 def update_db(data_dump: list):
     logging.info("Starting data loading process...")

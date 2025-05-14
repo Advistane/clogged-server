@@ -157,6 +157,10 @@ jobs:
             export GHCR_USER=${{ github.repository_owner }}
             export GHCR_TOKEN=${{ secrets.GHCR_TOKEN }}
             
+            export B2_IMAGES_ACCESS_KEY_ID=${{ secrets.B2_IMAGES_ACCESS_KEY_ID }}
+            export B2_IMAGES_SECRET_ACCESS_KEY=${{ secrets.B2_IMAGES_SECRET_ACCESS_KEY }}
+            export B2_IMAGES_BUCKET_NAME=${{ secrets.B2_IMAGES_BUCKET_NAME }}
+            
             echo "Executing deployment script on $host for branch $DEPLOY_BRANCH"
             cd $APP_DEPLOY_PATH
             ./deploy.sh # Execute the deployment script
@@ -185,6 +189,11 @@ jobs:
               printf "%s=\"%s\"\n" "B2_ENDPOINT" "${{ vars.B2_ENDPOINT }}" >> "$ENV_FILE_PATH"
               printf "%s=\"%s\"\n" "B2_REGION" "${{ vars.B2_REGION }}" >> "$ENV_FILE_PATH"
               printf "%s=\"%s\"\n" "B2_BUCKET_NAME" "${{ vars.B2_BUCKET_NAME }}" >> "$ENV_FILE_PATH"
+            
+              printf "%s=\"%s\"\n" "B2_IMAGES_ACCESS_KEY_ID" "${{ secrets.B2_IMAGES_ACCESS_KEY_ID }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "B2_IMAGES_BUCKET_NAME" "${{ secrets.B2_IMAGES_BUCKET_NAME }}" >> "$ENV_FILE_PATH"
+              printf "%s=\"%s\"\n" "B2_IMAGES_SECRET_ACCESS_KEY" "${{ secrets.B2_IMAGES_SECRET_ACCESS_KEY }}" >> "$ENV_FILE_PATH"
+            
               printf "%s=\"%s\"\n" "ENDPOINT_SECRET_KEY" "${{ secrets.ENDPOINT_SECRET_KEY }}" >> "$ENV_FILE_PATH"
               # Include Image Names if your docker-compose.yml uses substitution for them
               printf "%s=\"%s\"\n" "DB_IMAGE_NAME" "${{ needs.build-and-push.outputs.db_image || '' }}" >> "$ENV_FILE_PATH"
