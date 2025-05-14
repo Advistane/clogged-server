@@ -95,7 +95,8 @@
 			return "Hespori";
 
 		case "huey":
-			return "Hueycoatl";
+		case "hueycoatl":
+			return "The Hueycoatl";
 
 		case "zuk":
 		case "inferno":
@@ -595,6 +596,8 @@ export function getKCLookupAliases() {
 		"prime": "Dagannoth Prime",
 		"rex": "Dagannoth Rex",
 		"supreme": "Dagannoth Supreme",
+
+		"the hueycoatl": "Hueycoatl",
 
 		// hunter rumour variants
 		"hunter guild": "Hunter Rumours",
