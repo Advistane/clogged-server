@@ -16,7 +16,7 @@ def get_public_url(file_name):
 
 def get_b2_client():
     b2_client = boto3.resource(service_name='s3',
-                             endpoint_url="https" + endpoint,  # Backblaze endpoint
+                             endpoint_url="https://" + endpoint,  # Backblaze endpoint
                              aws_access_key_id=access_key_id,  # Backblaze keyID
                              aws_secret_access_key=secret_access_key)  # Backblaze applicationKey
     return b2_client

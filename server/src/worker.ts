@@ -16,7 +16,6 @@ const redisConnection = new IORedis(redisPort, redisHost, {
 redisConnection.on('connect', () => logger.info('Worker connected to Redis'));
 redisConnection.on('error', (err) => logger.error('Worker Redis connection error', err));
 
-// --- Database Connection (Same as in index.ts) ---
 const pool = new Pool({
 	host: process.env.DB_HOST || 'db',
 	port: parseInt(process.env.DB_PORT || '5432'),
@@ -42,82 +41,136 @@ pool.connect((err, client, release) => {
 });
 
 const processClogUpdate = async (job: Job<UserCollectionData>) => {
-	const { username, accountHash, collectedItems, subcategories } = job.data;
+	const { username, accountHash, profileVisible, collectedItems, subcategories } = job.data;
 	const log = logger.child({ jobId: job.id, accountHash, username }); // Contextual logger
-	log.info(`Processing clog update job started`, job.data);
+	log.info(`Processing clog update job started`);
 
 	const client = await pool.connect();
 	log.debug('Worker acquired DB client.');
+
 	try {
-		await client.query('BEGIN'); // Start transaction
+		await client.query('BEGIN');
 		log.debug('Worker transaction started.');
 
 		const playerInsertQuery = `
-				INSERT INTO players (accountHash, username)
-				VALUES ($1, $2)
-				ON CONFLICT (accountHash) DO UPDATE SET username = EXCLUDED.username;
-			`;
-		await client.query(playerInsertQuery, [accountHash, username]);
-		await client.query('COMMIT'); // Commit transaction
+            INSERT INTO players (accountHash, username, profile_visible_on_website)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (accountHash) DO UPDATE SET username = EXCLUDED.username, profile_visible_on_website = EXCLUDED.profile_visible_on_website
+            RETURNING id;
+        `;
 
-		log.info(`Processing collected items for accountHash: ${accountHash}...`);
-		for (const collectedItem of collectedItems) {
-			const itemId = collectedItem.id;
-			let quantity = collectedItem.quantity;
-			if (!itemId) {
-				log.warn(`Skipping collected item due to missing id or quantity: ${JSON.stringify(collectedItem)}`);
-				continue;
-			}
-			if (!quantity || quantity < 0) {
-				quantity = -1;
-			}
-			const itemInsertQuery = `
-					INSERT INTO player_items (accountHash, itemid, quantity)
-					VALUES ($1, $2, $3)
-					ON CONFLICT (accountHash, itemid) DO UPDATE SET quantity = EXCLUDED.quantity;
-				`;
-			await client.query(itemInsertQuery, [accountHash, itemId, quantity]);
+		const playerInsertResult = await client.query(playerInsertQuery, [accountHash, username, profileVisible]);
+		const playerId = playerInsertResult.rows[0].id; // Store the id
+		if (!playerId) {
+			log.warn(`Player ID not found for accountHash: ${accountHash}`);
+			throw new Error(`Player ID not found for accountHash: ${accountHash}`);
 		}
 
-		log.info(`Processing subcategory ids for accountHash: ${accountHash}...`);
-		for (const subcategory of subcategories) {
-			const subcategoryId = subcategory.id;
-			let kc = subcategory.kc;
-			if (!subcategoryId) {
-				log.warn(`Skipping collected item due to missing id: ${JSON.stringify(subcategory)}`);
-				continue;
+		log.debug(`Player info processed for accountHash: ${accountHash}, playerId: ${playerId}`);
+
+		// Batch Insert/Update Collected Items
+		if (collectedItems && collectedItems.length > 0) {
+			log.info(`Processing ${collectedItems.length} collected items for accountHash: ${accountHash} using batch update.`);
+
+			const itemValues: string[] = [];
+			const itemParams: (string | number | boolean)[] = [];
+			let paramIndex = 1;
+
+			for (const collectedItem of collectedItems) {
+				const itemId = collectedItem.id;
+				let quantity = collectedItem.quantity;
+
+				if (!itemId) {
+					log.warn(`Skipping collected item due to missing id: ${JSON.stringify(collectedItem)}`);
+					continue;
+				}
+
+				if (quantity === undefined || quantity === null || quantity < 0) {
+					quantity = -1;
+				}
+
+				itemValues.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2})`);
+
+				itemParams.push(playerId);
+				itemParams.push(itemId);
+				itemParams.push(quantity);
+
+				paramIndex += 3;
 			}
 
-			if (!kc || kc < 0) {
-				kc = -1;
-			}
-
-			try {
+			if (itemValues.length > 0) {
 				const itemInsertQuery = `
-					INSERT INTO player_kc (accountHash, subcategoryid, kc)
-					VALUES ($1, $2, $3)
-					ON CONFLICT (accountHash, subcategoryid) DO UPDATE SET kc = EXCLUDED.kc;
-				`;
-				await client.query(itemInsertQuery, [accountHash, subcategoryId, kc]);
-			} catch (err) {
-				log.error(err, `Error inserting/updating player_kc for accountHash: ${accountHash}, subcategoryId: ${subcategoryId}`);
+                    INSERT INTO player_items (playerid, itemid, quantity)
+                    VALUES ${itemValues.join(', ')}
+                    ON CONFLICT (playerid, itemid) DO UPDATE SET quantity = EXCLUDED.quantity;
+                `;
+
+				await client.query(itemInsertQuery, itemParams);
+				log.debug(`Batch item update completed for ${itemValues.length} items.`);
+			} else {
+				log.info('No valid collected items to process.');
 			}
+
+		} else {
+			log.info('No collected items provided in job data.');
 		}
 
-		await client.query('COMMIT'); // Commit transaction
+		// Batch Insert/Update Subcategory KCs
+		if (subcategories && subcategories.length > 0) {
+			log.info(`Processing ${subcategories.length} subcategory KCs for accountHash: ${accountHash} using batch update.`);
+
+			const kcValues: string[] = [];
+			const kcParams: (string | number | boolean)[] = [];
+			let paramIndex = 1;
+
+			for (const subcategory of subcategories) {
+				const subcategoryId = subcategory.id;
+				let kc = subcategory.kc;
+
+				if (!subcategoryId) {
+					log.warn(`Skipping subcategory KC due to missing id: ${JSON.stringify(subcategory)}`);
+					continue;
+				}
+
+				if (kc === undefined || kc === null || kc < 0) {
+					kc = -1;
+				}
+
+				kcValues.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2})`);
+
+				kcParams.push(playerId);
+				kcParams.push(subcategoryId);
+				kcParams.push(kc);
+
+				paramIndex += 3;
+			}
+
+			if (kcValues.length > 0) {
+				const kcInsertQuery = `
+                    INSERT INTO player_kc (playerid, subcategoryid, kc)
+                    VALUES ${kcValues.join(', ')}
+                    ON CONFLICT (playerid, subcategoryid) DO UPDATE SET kc = EXCLUDED.kc;
+                `;
+				await client.query(kcInsertQuery, kcParams);
+				log.debug(`Batch KC update completed for ${kcValues.length} subcategories.`);
+			} else {
+				log.info('No valid subcategory KCs to process.');
+			}
+
+		} else {
+			log.info('No subcategory KCs provided in job data.');
+		}
+
+		await client.query('COMMIT');
 		log.info('Transaction committed successfully.');
-
-		// Optional: Add cache invalidation logic here if needed
-		// const cacheKey = `${username}-${subcategoryId}`; // Need to figure out which keys to bust
-		// cache.del(cacheKey); // Requires access to the cache instance or Redis
-
 	} catch (err: any) {
 		log.error(err, 'Error processing clog update job');
+		// Rollback transaction on any error
 		try {
-			await client.query('ROLLBACK'); // Rollback on error
+			await client.query('ROLLBACK');
 			log.warn('Worker transaction rolled back.');
 		} catch (rollbackErr) {
-			log.error(rollbackErr, 'Failed to rollback worker transaction');
+			log.error(rollbackErr, 'Failed to rollback worker transaction', rollbackErr); // Log rollback error details
 		}
 
 		throw err;
@@ -128,14 +181,13 @@ const processClogUpdate = async (job: Job<UserCollectionData>) => {
 };
 
 
-// --- Initialize and Start the Worker ---
 logger.info('Initializing Clog Update Worker...');
-const worker = new Worker('clog-update', processClogUpdate, { // Queue name must match Queue() in queue.ts
+const worker = new Worker('clog-update', processClogUpdate, {
 	connection: redisConnection,
-	concurrency: 5, // Process up to 5 jobs concurrently (adjust based on resources)
-	limiter: { // Optional: Rate limit jobs if needed
-		max: 100, // Max 100 jobs
-		duration: 1000 // per second
+	concurrency: 5,
+	limiter: {
+		max: 100,
+		duration: 1000
 	}
 });
 
@@ -144,7 +196,6 @@ worker.on('completed', (job: Job, result: any) => {
 });
 
 worker.on('failed', (job: Job | undefined, error: Error) => {
-	// job might be undefined if connection failed, etc.
 	logger.error(error, `Job ${job?.id} failed.`);
 });
 
