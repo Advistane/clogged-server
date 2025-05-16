@@ -12,6 +12,7 @@ interface Subcategory {
 export interface UserCollectionData {
 	username: string;
 	accountHash: number;
+	profileVisible: boolean;
 	collectedItems: CollectedItem[];
 	subcategories: Subcategory[];
 }

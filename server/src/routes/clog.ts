@@ -54,39 +54,14 @@ export const createClogRouter = (pool: Pool) => {
 
 	// Get all items
 	router.post('/update', async (req, res): Promise<any> => {
-		let {username, accountHash, collectedItems, subcategories}: UserCollectionData = req.body;
-		req.log.info({accountHash, username}, 'Received clog update request');
+		const requestBody: UserCollectionData = req.body;
+		const accountHash = requestBody.accountHash;
+		const username = requestBody.username;
+		const profileVisible = requestBody.profileVisible;
+		const collectedItems = requestBody.collectedItems;
+		const subcategories = requestBody.subcategories;
 
-		if (req.body.collectedIds) {
-			const {username2, accountHash2, collectedIds, categories2} = req.body;
-
-			let convertedCollectedItems: { id: number, quantity: number }[] = [];
-
-			req.log.warn('Received deprecated clog update request. Please use "collectedItems" instead.');
-			req.log.info(collectedIds);
-			for (const subcategoryIdStr in collectedIds) {
-				// Ensure the key is actually a property of the object
-				if (Object.prototype.hasOwnProperty.call(collectedIds, subcategoryIdStr)) {
-					const itemIds = collectedIds[subcategoryIdStr];
-
-					if (!Array.isArray(itemIds)) {
-						req.log.warn(`Skipping invalid collectedIds entry. Item ids Value: ${JSON.stringify(itemIds)}`);
-						continue;
-					}
-
-					itemIds.forEach((itemId: number) => {
-						if (typeof itemId !== 'number' || isNaN(itemId)) {
-							req.log.warn(`Skipping invalid itemId: ${itemId}`);
-						} else {
-							convertedCollectedItems.push({id: itemId, quantity: 1}); // Default quantity to 1
-						}
-					});
-				}
-			}
-			collectedItems = convertedCollectedItems;
-			subcategories = [];
-			req.log.info('Converted "collectedIds" to "collectedItems" format.', {collectedItems});
-		}
+		req.log.info({accountHash, username, profileVisible}, 'Received clog update request');
 
 		if (typeof collectedItems !== 'object' || collectedItems === null) {
 			req.log.warn('Invalid request body structure or types for clog update');
@@ -102,7 +77,8 @@ export const createClogRouter = (pool: Pool) => {
 			username,
 			accountHash,
 			collectedItems,
-			subcategories
+			subcategories,
+			profileVisible: profileVisible || false,
 		};
 		req.log.info({jobPayload}, 'Clog update job payload');
 
@@ -204,68 +180,6 @@ export const createClogRouter = (pool: Pool) => {
 		});
 	});
 
-	router.get('/get/:username/:subcategoryId', async (req, res): Promise<any> => {
-		const log = req.log;
-		log.info({
-			username: req.params.username,
-			subcategoryId: req.params.subcategoryId
-		}, 'Fetching deprecated collection log data request');
-		const username: string = decodeURIComponent(req.params.username);
-		const subcategoryId: string = req.params.subcategoryId;
-		const client = await pool.connect();
-
-		if (!username || !subcategoryId) {
-			res.status(400).send('Invalid username or subcategory ID');
-			return;
-		}
-
-		try {
-			const query = `
-					  SELECT 
-					    pi.itemid
-					  FROM 
-					    player_items pi
-					  INNER JOIN 
-					    players p ON pi.accountHash = p.accountHash
-					  INNER JOIN 
-					    subcategory_items sci ON sci.itemid = pi.itemid
-					  INNER JOIN 
-					    subcategories s ON s.id = sci.subcategoryid
-					  LEFT JOIN 
-					    player_kc pkc ON pkc.accountHash = p.accountHash 
-					                  AND pkc.subcategoryId = s.id 
-					                  AND pkc.kc != -1
-					  WHERE 
-					    p.username ILIKE $1
-					    AND s.id = $2
-					`;
-
-			const result = await client.query<CollectionLogItem>(query, [username, subcategoryId]);
-
-			const items = []
-			for (const item of result.rows) {
-				items.push(item.itemid);
-			}
-
-			const kc = result.rows.length > 0 ? result.rows[0].kc || 0 : 0;
-
-			const response = {
-				kc: kc,
-				items: items
-			}
-
-			res.json(response);
-		} catch (err) {
-			log.error(err, 'Error querying items');
-			res.status(500).send('Server error');
-		} finally {
-			if (client) {
-				client.release();
-				log.debug('Database client released');
-			}
-		}
-	})
-
 	router.get('/:username/:subcategoryName', async (req, res): Promise<any> => {
 		const log = req.log;
 		const username: string = decodeURIComponent(req.params.username);
@@ -314,7 +228,7 @@ export const createClogRouter = (pool: Pool) => {
 			// --- Query 1: Fetch Metadata (Player, Subcategory, KC) ---
 			const metadataQuery = `
             SELECT
-                p.accounthash,
+                p.id AS playerid,
                 s.id AS subcategory_id,
                 s.name AS validated_subcategory_name,
                 s.total AS total,
@@ -324,7 +238,7 @@ export const createClogRouter = (pool: Pool) => {
             JOIN
                 subcategories s ON s.name = $2 -- Use subcategoryAliased
             LEFT JOIN
-                player_kc pkc ON pkc.accounthash = p.accounthash AND pkc.subcategoryId = s.id AND pkc.kc != -1
+                player_kc pkc ON pkc.playerid = p.id AND pkc.subcategoryId = s.id AND pkc.kc != -1
             WHERE
                 p.username ILIKE $1;
         `;
@@ -336,8 +250,8 @@ export const createClogRouter = (pool: Pool) => {
 				return;
 			}
 
-			const { accounthash: accountHash, subcategory_id: subcategoryId, validated_subcategory_name: validatedSubcategoryName, total, kc } = metadataResult.rows[0];
-			log.debug({ username, subcategoryAliased, accountHash, subcategoryId, validatedSubcategoryName, total, kc }, 'Metadata fetched');
+			const { playerid: playerid, subcategory_id: subcategoryId, validated_subcategory_name: validatedSubcategoryName, total, kc } = metadataResult.rows[0];
+			log.debug({ username, subcategoryAliased, playerid, subcategoryId, validatedSubcategoryName, total, kc }, 'Metadata fetched');
 
 			// --- Query 2: Fetch Items (Owned or Missing) ---
 			let itemsResult;
@@ -348,9 +262,9 @@ export const createClogRouter = (pool: Pool) => {
                 SELECT pi.itemid, pi.quantity
                 FROM player_items pi
                 JOIN subcategory_items sci ON sci.itemid = pi.itemid
-                WHERE pi.accounthash = $1 AND sci.subcategoryid = $2;
+                WHERE pi.playerid = $1 AND sci.subcategoryid = $2;
             `;
-				itemsResult = await client.query(ownedItemsQuery, [accountHash, subcategoryId]);
+				itemsResult = await client.query(ownedItemsQuery, [playerid, subcategoryId]);
 				itemsResult.rows.forEach(row => {
 					items.push({ itemId: row.itemid, quantity: row.quantity });
 				});
@@ -362,11 +276,11 @@ export const createClogRouter = (pool: Pool) => {
                 AND NOT EXISTS (
                     SELECT 1
                     FROM player_items pi
-                    WHERE pi.accounthash = $2
+                    WHERE pi.id = $2
                     AND pi.itemid = sci.itemid
                 );
             `;
-				itemsResult = await client.query(missingItemsQuery, [subcategoryId, accountHash]);
+				itemsResult = await client.query(missingItemsQuery, [subcategoryId, playerid]);
 				itemsResult.rows.forEach(row => {
 					items.push({ itemId: row.itemid, quantity: 1 }); // Missing items have quantity 0
 				});
