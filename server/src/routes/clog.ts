@@ -259,28 +259,28 @@ export const createClogRouter = (pool: Pool) => {
 
 			if (mode === 'owned') {
 				const ownedItemsQuery = `
-                SELECT pi.itemid, pi.quantity
-                FROM player_items pi
-                JOIN subcategory_items sci ON sci.itemid = pi.itemid
-                WHERE pi.playerid = $1 AND sci.subcategoryid = $2;
-            `;
+	                SELECT pi.itemid, pi.quantity
+	                FROM player_items pi
+	                JOIN subcategory_items sci ON sci.itemid = pi.itemid
+	                WHERE pi.playerid = $1 AND sci.subcategoryid = $2;
+	            `;
 				itemsResult = await client.query(ownedItemsQuery, [playerid, subcategoryId]);
 				itemsResult.rows.forEach(row => {
 					items.push({ itemId: row.itemid, quantity: row.quantity });
 				});
 			} else { // mode === 'missing'
 				const missingItemsQuery = `
-                SELECT sci.itemid
-                FROM subcategory_items sci
-                WHERE sci.subcategoryid = $1
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM player_items pi
-                    WHERE pi.id = $2
-                    AND pi.itemid = sci.itemid
-                );
-            `;
-				itemsResult = await client.query(missingItemsQuery, [subcategoryId, playerid]);
+	                SELECT sci.itemid
+	                FROM subcategory_items sci
+	                WHERE sci.subcategoryid = $2
+	                AND NOT EXISTS (
+	                    SELECT 1
+	                    FROM player_items pi
+	                    WHERE pi.playerid = $1
+	                    AND pi.itemid = sci.itemid
+	                );
+            	`;
+				itemsResult = await client.query(missingItemsQuery, [playerid, subcategoryId]);
 				itemsResult.rows.forEach(row => {
 					items.push({ itemId: row.itemid, quantity: 1 }); // Missing items have quantity 0
 				});
