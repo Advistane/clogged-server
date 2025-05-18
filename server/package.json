@@ -11,6 +11,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "migrate:create": "node-pg-migrate -m migrations create",
     "migrate:up": "node-pg-migrate -m migrations up",
+    "migrate:redo": "node-pg-migrate -m migrations redo",
     "migrate:down": "node-pg-migrate -m migrations down"
   },
   "type": "commonjs",
