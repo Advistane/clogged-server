@@ -7,6 +7,9 @@ import logger from './utils/logger';
 import {pinoHttp} from "pino-http";
 
 import {redisConnection} from "./queue";
+import {createGroupsRouter} from "./routes/groups";
+import {createUserRouter} from "./routes/users";
+import {getKCLookupAliases} from "./utils/alias";
 
 dotenv.config();
 
@@ -76,7 +79,19 @@ app.get('/healthz', async (req, res) => {
 	}
 });
 
+app.get('/kc-aliases', async (req, res): Promise<any> => {
+	try {
+		const aliases = getKCLookupAliases();
+		res.status(200).json(aliases);
+	} catch (error) {
+		req.log.error(error, 'Failed to fetch KC lookup aliases');
+		res.status(500).json({error: 'Failed to fetch KC lookup aliases'});
+	}
+});
+
 app.use('/api/clog', createClogRouter(pool));
+app.use('/groups', createGroupsRouter(pool));
+app.use('/users', createUserRouter(pool));
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: any) => {
