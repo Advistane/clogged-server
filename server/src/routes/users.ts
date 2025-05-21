@@ -76,6 +76,7 @@ export const createUserRouter = (pool: Pool) => {
 		const username: string = decodeURIComponent(req.params.username);
 		const subcategoryName: string = req.params.subcategoryName;
 		const mode: string = (req.query.mode as string) || 'owned';
+		const otherLookup: boolean = (req.query.other as string) === 'true' || false;
 
 		if (mode !== 'owned' && mode !== 'missing') {
 			log.warn({username, mode}, 'Invalid mode parameter');
@@ -92,7 +93,7 @@ export const createUserRouter = (pool: Pool) => {
 		}
 
 		// Check cache first
-		const cacheKey = `clog:${username}:${subcategoryAliased}:${mode}`;
+		const cacheKey = `clog:${username}:${subcategoryAliased}:${mode}:${otherLookup}`;
 		const cacheTTLSeconds = 10;
 		try {
 			const cachedDataString = await redisConnection.get(cacheKey);
@@ -113,9 +114,10 @@ export const createUserRouter = (pool: Pool) => {
 
 		const client = await pool.connect();
 		try {
-			const metadataQuery = `
+			let metadataQuery = `
             SELECT
                 p.id AS playerid,
+                p.username AS player_username,
                 s.id AS subcategory_id,
                 s.name AS validated_subcategory_name,
                 s.total AS total,
@@ -127,17 +129,29 @@ export const createUserRouter = (pool: Pool) => {
             LEFT JOIN
                 player_kc pkc ON pkc.playerid = p.id AND pkc.subcategoryId = s.id AND pkc.kc != -1
             WHERE
-                p.username ILIKE $1;
+                p.username ILIKE $1
         `;
+			if (otherLookup) {
+				metadataQuery += ' AND p.profile_visible_on_website = true';
+			}
+			metadataQuery += ';';
+
 			const metadataResult = await client.query(metadataQuery, [username, subcategoryAliased]);
 
 			if (metadataResult.rows.length === 0) {
-				log.warn({ username, subcategoryAliased }, 'Metadata not found: Player or Subcategory does not exist, or combination is invalid.');
-				res.status(404).send('Player or Subcategory not found.');
+				log.warn({ username, subcategoryAliased, otherLookup }, 'Metadata not found: Player or Subcategory does not exist, or combination is invalid.');
+				let responseMessage: string;
+				if (otherLookup) {
+					responseMessage = 'No data was found. Ensure the other account has a public profile and the clog name is correct.';
+				} else {
+					responseMessage = 'No data was found for this input.';
+				}
+
+				res.status(404).send(responseMessage);
 				return;
 			}
 
-			const { playerid: playerid, subcategory_id: subcategoryId, validated_subcategory_name: validatedSubcategoryName, total, kc } = metadataResult.rows[0];
+			const { playerid: playerid, player_username: playerUsername, subcategory_id: subcategoryId, validated_subcategory_name: validatedSubcategoryName, total, kc } = metadataResult.rows[0];
 			log.debug({ username, subcategoryAliased, playerid, subcategoryId, validatedSubcategoryName, total, kc }, 'Metadata fetched');
 
 			// --- Query 2: Fetch Items (Owned or Missing) ---
@@ -175,6 +189,7 @@ export const createUserRouter = (pool: Pool) => {
 			log.debug({ username, subcategoryAliased, mode, itemCount: items.length }, 'Items fetched');
 
 			const response = {
+				username: playerUsername,
 				kc: Number(kc),
 				subcategoryName: validatedSubcategoryName,
 				total: Number(total),
