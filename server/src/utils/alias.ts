@@ -9,7 +9,7 @@
 		case "raxx":
 		case "rax":
 		case "spiderbro":
-		case "rarku's best friend":
+		case "raikaru's best friend":
 			return "Araxxor";
 
 		case "barrows":
