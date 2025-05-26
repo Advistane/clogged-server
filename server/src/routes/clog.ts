@@ -279,7 +279,8 @@ export const createClogRouter = (pool: Pool) => {
 	                    FROM player_items pi
 	                    WHERE pi.playerid = $1
 	                    AND pi.itemid = sci.itemid
-	                );
+	                )
+                    ORDER BY sci.id;
             	`;
 				itemsResult = await client.query(missingItemsQuery, [playerid, subcategoryId]);
 				itemsResult.rows.forEach(row => {
