@@ -262,7 +262,8 @@ export const createClogRouter = (pool: Pool) => {
 	                SELECT pi.itemid, pi.quantity
 	                FROM player_items pi
 	                JOIN subcategory_items sci ON sci.itemid = pi.itemid
-	                WHERE pi.playerid = $1 AND sci.subcategoryid = $2;
+	                WHERE pi.playerid = $1 AND sci.subcategoryid = $2
+                    ORDER BY sci.id;
 	            `;
 				itemsResult = await client.query(ownedItemsQuery, [playerid, subcategoryId]);
 				itemsResult.rows.forEach(row => {
