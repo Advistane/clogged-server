@@ -262,7 +262,8 @@ export const createClogRouter = (pool: Pool) => {
 	                SELECT pi.itemid, pi.quantity
 	                FROM player_items pi
 	                JOIN subcategory_items sci ON sci.itemid = pi.itemid
-	                WHERE pi.playerid = $1 AND sci.subcategoryid = $2;
+	                WHERE pi.playerid = $1 AND sci.subcategoryid = $2
+                    ORDER BY sci.id;
 	            `;
 				itemsResult = await client.query(ownedItemsQuery, [playerid, subcategoryId]);
 				itemsResult.rows.forEach(row => {
@@ -325,6 +326,136 @@ export const createClogRouter = (pool: Pool) => {
 			res.status(500).json({error: 'Failed to fetch KC lookup aliases'});
 		}
 	});
+
+	router.get('/:username', async (req, res): Promise<any> => {
+		const log = req.log;
+		const username: string = decodeURIComponent(req.params.username);
+		log.info({username}, 'Fetching collection log data request');
+		if (!username) {
+			res.status(400).send('Invalid username');
+			return;
+		}
+
+		const client = await pool.connect();
+		try {
+			const userExistsQuery = `
+                SELECT 1
+                FROM players
+                WHERE username ILIKE $1 AND profile_visible_on_website = true;
+			`;
+			const userExistsResult = await client.query(userExistsQuery, [username]);
+
+			if (userExistsResult.rowCount === 0) {
+				log.warn({ username }, 'Username not found or profile not visible.');
+				res.status(404).send('Username not found or profile not visible.');
+				return;
+			}
+
+			// --- Query 1: Fetch Metadata (Player, Subcategory, KC) ---
+			const metadataQuery = `
+                WITH player_acc AS (
+                    -- Step 1: Get the accounthash for the target player
+                    SELECT id
+                    FROM players
+                    WHERE username ILIKE $1 AND profile_visible_on_website = true
+                ),
+                     all_items AS (
+                         -- Step 2: Collect all items for each subcategory
+                         SELECT
+                             si.itemid,
+                             si.originalitemid,
+                             si.subcategoryid,
+                             si.image_url,
+                             si.itemname,
+                             s.categoryid,
+                             s.name AS subcategory_name,
+                             c.name AS category_name
+                         FROM subcategory_items si
+                                  JOIN subcategories s ON s.id = si.subcategoryid
+                                  JOIN categories c ON c.id = s.categoryid
+                     ),
+                     player_items AS (
+                         -- Step 3: Collect items owned by the player
+                         SELECT
+                             pi.itemid,
+                             pi.quantity,
+                             si.subcategoryid
+                         FROM player_acc pa
+                                  JOIN player_items pi ON pi.playerid = pa.id
+                                  JOIN subcategory_items si ON si.itemid = pi.itemid
+                     ),
+                     items_by_subcategory AS (
+                         -- Step 4: Aggregate both owned and missing items for each subcategory
+                         SELECT
+                             ai.subcategoryid,
+                             ai.subcategory_name,
+                             ai.categoryid,
+                             ai.category_name,
+                             json_agg(
+                                     json_build_object(
+                                             'item_id', ai.originalitemid,
+                                             'quantity', COALESCE(pi.quantity, 0), -- 0 for missing items
+                                             'image_url', ai.image_url,
+                                             'item_name', ai.itemname,
+                                             'owned', CASE WHEN pi.itemid IS NOT NULL THEN true ELSE false END
+                                     ) ORDER BY (COALESCE(pi.quantity, 0) > 0) DESC, ai.itemid
+                             ) AS items_json,
+                             COUNT(CASE WHEN pi.quantity > 0 THEN 1 END) as owned_items_count,
+                             COALESCE(MAX(pkc.kc), 0) AS kc -- Include player_kc.kc
+                         FROM all_items ai
+                                  LEFT JOIN player_items pi ON ai.itemid = pi.itemid
+                                  LEFT JOIN player_kc pkc ON pkc.subcategoryid = ai.subcategoryid
+                             AND pkc.playerid = (SELECT player_acc.id FROM player_acc)
+                         GROUP BY ai.subcategoryid, ai.subcategory_name, ai.categoryid, ai.category_name
+                     ),
+                     subcategories_by_category AS (
+                         -- Step 5: Aggregate subcategories for each category
+                         SELECT
+                             categoryid,
+                             category_name,
+                             json_agg(
+                                     json_build_object(
+                                             'name', subcategory_name,
+                                             'items', items_json,
+                                             'owned_items_count', owned_items_count,
+                                             'kc', kc -- Add kc to the subcategory
+                                     ) ORDER BY subcategory_name -- Consistent output order
+                             ) AS subcategories_json
+                         FROM items_by_subcategory
+                         GROUP BY categoryid, category_name
+                     )
+                -- Step 6: Final aggregation of categories
+                SELECT
+                    json_agg(
+                            json_build_object(
+                                    'category_name', category_name,
+                                    'subcategories', subcategories_json
+                            ) ORDER BY category_name -- Consistent output order
+                    ) AS categories
+                FROM subcategories_by_category;
+			`;
+			const metadataResult = await client.query(metadataQuery, [username]);
+
+			if (metadataResult.rows.length === 0 || !metadataResult.rows[0].categories) {
+				log.warn({ username }, 'No data found for the user.');
+				res.status(404).send('No data found for the user.');
+				return;
+			}
+
+			const response = {
+				categories: metadataResult.rows[0].categories,
+			};
+
+			res.json(response);
+		} catch (err) {
+			log.error(err, 'Error querying data');
+			res.status(500).send('Server error');
+		} finally {
+			client.release();
+			log.debug('Database client released');
+		}
+
+	})
 
 	return router;
 };
