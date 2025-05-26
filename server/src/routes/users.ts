@@ -160,11 +160,13 @@ export const createUserRouter = (pool: Pool) => {
 
 			if (mode === 'owned') {
 				const ownedItemsQuery = `
-	                SELECT pi.itemid, pi.quantity
-	                FROM player_items pi
-	                JOIN subcategory_items sci ON sci.itemid = pi.itemid
-	                WHERE pi.playerid = $1 AND sci.subcategoryid = $2;
-	            `;
+                    SELECT pi.itemid, pi.quantity
+                    FROM player_items pi
+                             JOIN subcategory_items sci ON sci.itemid = pi.itemid
+                    WHERE pi.playerid = $1
+                      AND sci.subcategoryid = $2
+                    ORDER BY sci.id;
+				`;
 				itemsResult = await client.query(ownedItemsQuery, [playerid, subcategoryId]);
 				itemsResult.rows.forEach(row => {
 					items.push({ itemId: row.itemid, quantity: row.quantity });
@@ -250,6 +252,7 @@ export const createUserRouter = (pool: Pool) => {
                      all_items AS (
                          -- Step 2: Collect all items for each subcategory
                          SELECT
+                             si.id,
                              si.itemid,
                              si.originalitemid,
                              si.subcategoryid,
@@ -261,6 +264,7 @@ export const createUserRouter = (pool: Pool) => {
                          FROM subcategory_items si
                                   JOIN subcategories s ON s.id = si.subcategoryid
                                   JOIN categories c ON c.id = s.categoryid
+                         ORDER BY si.id
                      ),
                      player_items AS (
                          -- Step 3: Collect items owned by the player
@@ -271,6 +275,7 @@ export const createUserRouter = (pool: Pool) => {
                          FROM player_acc pa
                                   JOIN player_items pi ON pi.playerid = pa.id
                                   JOIN subcategory_items si ON si.itemid = pi.itemid
+                         ORDER BY si.id
                      ),
                      items_by_subcategory AS (
                          -- Step 4: Aggregate both owned and missing items for each subcategory
@@ -286,7 +291,7 @@ export const createUserRouter = (pool: Pool) => {
                                              'image_url', ai.image_url,
                                              'item_name', ai.itemname,
                                              'owned', CASE WHEN pi.itemid IS NOT NULL THEN true ELSE false END
-                                     ) ORDER BY (COALESCE(pi.quantity, 0) > 0) DESC, ai.itemid
+                                     ) ORDER BY (COALESCE(pi.quantity, 0) > 0) DESC, ai.id
                              ) AS items_json,
                              COUNT(CASE WHEN pi.quantity > 0 THEN 1 END) as owned_items_count,
                              COALESCE(MAX(pkc.kc), 0) AS kc -- Include player_kc.kc
