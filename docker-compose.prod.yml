@@ -197,7 +197,7 @@ services:
       # --- Traefik Labels ---
       - "traefik.enable=true"
       # Define router for HTTPS traffic
-      - "traefik.http.routers.grafana-secure.rule=Host(`${GF_SERVER_ROOT_URL}`)"
+      - "traefik.http.routers.grafana-secure.rule=Host(`${GRAFANA_HOSTNAME}`)"
       - "traefik.http.routers.grafana-secure.entrypoints=websecure"
       - "traefik.http.routers.grafana-secure.tls=true"
       - "traefik.http.routers.grafana-secure.tls.certresolver=myresolver"
