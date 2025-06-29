@@ -65,11 +65,10 @@ def upsert_subcategory(conn, subcategory_id: int, subcategory_name: str, categor
 def upsert_subcategory_items(conn, subcategory_id: int, items: list):
     logging.info(f"Upserting items for subcategory {subcategory_id}: {items}")
     sql_insert = """
-                 INSERT INTO subcategory_items (subcategoryid, itemid, itemname, originalitemid)
-                 VALUES \
-                 %s
+                 INSERT INTO subcategory_items (subcategoryid, itemid, itemname, originalitemid, displayorder)
+                 VALUES %s
                 ON CONFLICT (subcategoryid, itemid) \
-                 DO UPDATE SET originalitemid = EXCLUDED.originalitemid, itemname = EXCLUDED.itemname;
+                 DO UPDATE SET originalitemid = EXCLUDED.originalitemid, itemname = EXCLUDED.itemname, displayorder = EXCLUDED.displayorder;
                  """
 
     sql_check = """
@@ -80,8 +79,29 @@ def upsert_subcategory_items(conn, subcategory_id: int, items: list):
                 """
     try:
         with conn.cursor() as cur:
+
+            item_ids_to_keep = [item["itemId"] for item in items]
+
+            if not item_ids_to_keep:
+                # If the incoming list is empty, delete all items for the subcategory.
+                sql_delete_all = "DELETE FROM subcategory_items WHERE subcategoryid = %s;"
+                cur.execute(sql_delete_all, (subcategory_id,))
+                logging.info(f"All items for subcategory {subcategory_id} deleted as the provided item list was empty.")
+            else:
+                # Delete items that are in the DB but not in our list of items to keep.
+                sql_delete_old = "DELETE FROM subcategory_items WHERE subcategoryid = %s AND itemid NOT IN %s;"
+                cur.execute(sql_delete_old, (subcategory_id, tuple(item_ids_to_keep)))
+                logging.info(f"Deleted old items for subcategory {subcategory_id} that are not in the new list.")
+
             # Insert items
-            execute_values(cur, sql_insert, [(subcategory_id, item["itemId"], item["itemName"], item["originalItemId"]) for item in items])
+            #execute_values(cur, sql_insert, [(subcategory_id, item["itemId"], item["itemName"], item["originalItemId"], item["displayorder"]) for item in items])
+            if items:
+                execute_values(cur, sql_insert, [
+                    (subcategory_id, item["itemId"], item["itemName"], item["originalItemId"], item["displayorder"]) for
+                    item in items
+                ])
+
+                logging.info(f"Upserted items for subcategory {subcategory_id}")
             conn.commit()
 
             # Check for empty or NULL image_url

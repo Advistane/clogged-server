@@ -126,7 +126,8 @@ def process_items(subcategory_name: str, subcategory_id: int, items_enum: int, c
     item_ids = [x[1] for x in items]
     final_items = []
 
-    for item_id in item_ids:
+    for i in range(len(item_ids)):
+        item_id = item_ids[i]
         item_name = item_names_dict.get(item_id, None)
         final_item_id = item_replacements.get(item_id, item_id)
         if item_id in item_replacements:
@@ -135,7 +136,8 @@ def process_items(subcategory_name: str, subcategory_id: int, items_enum: int, c
         final_item = {
             "itemId": final_item_id,
             "itemName": item_name if item_name else None,
-            "originalItemId": item_id
+            "originalItemId": item_id,
+            "displayorder": i + 1
         }
         final_items.append(final_item)
 
