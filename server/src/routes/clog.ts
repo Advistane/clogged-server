@@ -227,31 +227,46 @@ export const createClogRouter = (pool: Pool) => {
 		try {
 			// --- Query 1: Fetch Metadata (Player, Subcategory, KC) ---
 			const metadataQuery = `
-            SELECT
-                p.id AS playerid,
-                s.id AS subcategory_id,
-                s.name AS validated_subcategory_name,
-                s.total AS total,
-                COALESCE(pkc.kc, 0) AS kc
-            FROM
-                players p
-            JOIN
-                subcategories s ON s.name = $2 -- Use subcategoryAliased
-            LEFT JOIN
-                player_kc pkc ON pkc.playerid = p.id AND pkc.subcategoryId = s.id AND pkc.kc != -1
-            WHERE
-                p.username ILIKE $1;
-        `;
+                SELECT p.id                AS playerid,
+                       s.id                AS subcategory_id,
+                       s.name              AS validated_subcategory_name,
+                       s.total             AS total,
+                       COALESCE(pkc.kc, 0) AS kc
+                FROM players p
+                         JOIN
+                     subcategories s ON s.name = $2 -- Use subcategoryAliased
+                         LEFT JOIN
+                     player_kc pkc ON pkc.playerid = p.id AND pkc.subcategoryId = s.id AND pkc.kc != -1
+                WHERE p.username ILIKE $1;
+			`;
 			const metadataResult = await client.query(metadataQuery, [username, subcategoryAliased]);
 
 			if (metadataResult.rows.length === 0) {
-				log.warn({ username, subcategoryAliased }, 'Metadata not found: Player or Subcategory does not exist, or combination is invalid.');
+				log.warn({
+					username,
+					subcategoryAliased
+				}, 'Metadata not found: Player or Subcategory does not exist, or combination is invalid.');
 				res.status(404).send('Player or Subcategory not found.');
 				return;
 			}
 
-			const { playerid: playerid, subcategory_id: subcategoryId, validated_subcategory_name: validatedSubcategoryName, total, kc } = metadataResult.rows[0];
-			log.debug({ username, subcategoryAliased, playerid, subcategoryId, validatedSubcategoryName, total, kc }, 'Metadata fetched');
+			const {
+				playerid: playerid,
+				subcategory_id: subcategoryId,
+				validated_subcategory_name: validatedSubcategoryName,
+				total,
+				kc
+			} = metadataResult.rows[0];
+
+			log.debug({
+				username,
+				subcategoryAliased,
+				playerid,
+				subcategoryId,
+				validatedSubcategoryName,
+				total,
+				kc
+			}, 'Metadata fetched');
 
 			// --- Query 2: Fetch Items (Owned or Missing) ---
 			let itemsResult;
@@ -259,35 +274,34 @@ export const createClogRouter = (pool: Pool) => {
 
 			if (mode === 'owned') {
 				const ownedItemsQuery = `
-	                SELECT pi.itemid, pi.quantity
-	                FROM player_items pi
-	                JOIN subcategory_items sci ON sci.itemid = pi.itemid
-	                WHERE pi.playerid = $1 AND sci.subcategoryid = $2
-                    ORDER BY sci.id;
-	            `;
+                    SELECT pi.itemid, pi.quantity
+                    FROM player_items pi
+                        JOIN subcategory_items sci ON sci.itemid = pi.itemid
+                    WHERE pi.playerid = $1
+                    	AND sci.subcategoryid = $2
+                    ORDER BY sci.displayorder;
+				`;
 				itemsResult = await client.query(ownedItemsQuery, [playerid, subcategoryId]);
 				itemsResult.rows.forEach(row => {
-					items.push({ itemId: row.itemid, quantity: row.quantity });
+					items.push({itemId: row.itemid, quantity: row.quantity});
 				});
 			} else { // mode === 'missing'
 				const missingItemsQuery = `
-	                SELECT sci.itemid
-	                FROM subcategory_items sci
-	                WHERE sci.subcategoryid = $2
-	                AND NOT EXISTS (
-	                    SELECT 1
-	                    FROM player_items pi
-	                    WHERE pi.playerid = $1
-	                    AND pi.itemid = sci.itemid
-	                )
-                    ORDER BY sci.id;
-            	`;
+                    SELECT sci.itemid
+                    FROM subcategory_items sci
+                    WHERE sci.subcategoryid = $2
+                    	AND NOT EXISTS (SELECT 1
+                                      FROM player_items pi
+                                      WHERE pi.playerid = $1
+                                        AND pi.itemid = sci.itemid)
+                    ORDER BY sci.displayorder;
+				`;
 				itemsResult = await client.query(missingItemsQuery, [playerid, subcategoryId]);
 				itemsResult.rows.forEach(row => {
-					items.push({ itemId: row.itemid, quantity: 1 }); // Missing items have quantity 0
+					items.push({itemId: row.itemid, quantity: 1}); // Missing items have quantity 0
 				});
 			}
-			log.debug({ username, subcategoryAliased, mode, itemCount: items.length }, 'Items fetched');
+			log.debug({username, subcategoryAliased, mode, itemCount: items.length}, 'Items fetched');
 
 			// --- Response Construction ---
 			const response = {
@@ -301,9 +315,9 @@ export const createClogRouter = (pool: Pool) => {
 			try {
 				const responseString = JSON.stringify(response);
 				await redisConnection.set(cacheKey, responseString, 'EX', cacheTTLSeconds);
-				log.debug({ cacheKey, ttl: cacheTTLSeconds }, 'Result stored in Redis cache');
+				log.debug({cacheKey, ttl: cacheTTLSeconds}, 'Result stored in Redis cache');
 			} catch (redisSetError) {
-				log.error({ err: redisSetError, cacheKey }, 'Redis SET command failed');
+				log.error({err: redisSetError, cacheKey}, 'Redis SET command failed');
 			}
 
 			res.json(response);

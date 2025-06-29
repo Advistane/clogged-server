@@ -65,11 +65,10 @@ def upsert_subcategory(conn, subcategory_id: int, subcategory_name: str, categor
 def upsert_subcategory_items(conn, subcategory_id: int, items: list):
     logging.info(f"Upserting items for subcategory {subcategory_id}: {items}")
     sql_insert = """
-                 INSERT INTO subcategory_items (subcategoryid, itemid, itemname, originalitemid)
-                 VALUES \
-                 %s
+                 INSERT INTO subcategory_items (subcategoryid, itemid, itemname, originalitemid, displayorder)
+                 VALUES %s
                 ON CONFLICT (subcategoryid, itemid) \
-                 DO UPDATE SET originalitemid = EXCLUDED.originalitemid, itemname = EXCLUDED.itemname;
+                 DO UPDATE SET originalitemid = EXCLUDED.originalitemid, itemname = EXCLUDED.itemname, displayorder = EXCLUDED.displayorder;
                  """
 
     sql_check = """
@@ -81,7 +80,7 @@ def upsert_subcategory_items(conn, subcategory_id: int, items: list):
     try:
         with conn.cursor() as cur:
             # Insert items
-            execute_values(cur, sql_insert, [(subcategory_id, item["itemId"], item["itemName"], item["originalItemId"]) for item in items])
+            execute_values(cur, sql_insert, [(subcategory_id, item["itemId"], item["itemName"], item["originalItemId"], item["displayorder"]) for item in items])
             conn.commit()
 
             # Check for empty or NULL image_url

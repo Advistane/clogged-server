@@ -115,22 +115,19 @@ export const createUserRouter = (pool: Pool) => {
 		const client = await pool.connect();
 		try {
 			let metadataQuery = `
-            SELECT
-                p.id AS playerid,
-                p.username AS player_username,
-                s.id AS subcategory_id,
-                s.name AS validated_subcategory_name,
-                s.total AS total,
-                COALESCE(pkc.kc, 0) AS kc
-            FROM
-                players p
-            JOIN
-                subcategories s ON s.name = $2 -- Use subcategoryAliased
-            LEFT JOIN
-                player_kc pkc ON pkc.playerid = p.id AND pkc.subcategoryId = s.id AND pkc.kc != -1
-            WHERE
-                p.username ILIKE $1
-        `;
+                SELECT 
+					p.id AS playerid,
+					p.username AS player_username,
+					s.id AS subcategory_id,
+					s.name AS validated_subcategory_name,
+					s.total AS total,
+					COALESCE(pkc.kc, 0) AS kc
+                FROM players p
+                	JOIN subcategories s ON s.name = $2
+                	LEFT JOIN
+                     	player_kc pkc ON pkc.playerid = p.id AND pkc.subcategoryId = s.id AND pkc.kc != -1
+                WHERE p.username ILIKE $1
+			`;
 			if (otherLookup) {
 				metadataQuery += ' AND p.profile_visible_on_website = true';
 			}
@@ -139,7 +136,11 @@ export const createUserRouter = (pool: Pool) => {
 			const metadataResult = await client.query(metadataQuery, [username, subcategoryAliased]);
 
 			if (metadataResult.rows.length === 0) {
-				log.warn({ username, subcategoryAliased, otherLookup }, 'Metadata not found: Player or Subcategory does not exist, or combination is invalid.');
+				log.warn({
+					username,
+					subcategoryAliased,
+					otherLookup
+				}, 'Metadata not found: Player or Subcategory does not exist, or combination is invalid.');
 				let responseMessage: string;
 				if (otherLookup) {
 					responseMessage = 'No data was found. Ensure the other account has a public profile and the clog name is correct.';
@@ -151,8 +152,24 @@ export const createUserRouter = (pool: Pool) => {
 				return;
 			}
 
-			const { playerid: playerid, player_username: playerUsername, subcategory_id: subcategoryId, validated_subcategory_name: validatedSubcategoryName, total, kc } = metadataResult.rows[0];
-			log.debug({ username, subcategoryAliased, playerid, subcategoryId, validatedSubcategoryName, total, kc }, 'Metadata fetched');
+			const {
+				playerid: playerid,
+				player_username: playerUsername,
+				subcategory_id: subcategoryId,
+				validated_subcategory_name: validatedSubcategoryName,
+				total,
+				kc
+			} = metadataResult.rows[0];
+
+			log.debug({
+				username,
+				subcategoryAliased,
+				playerid,
+				subcategoryId,
+				validatedSubcategoryName,
+				total,
+				kc
+			}, 'Metadata fetched');
 
 			// --- Query 2: Fetch Items (Owned or Missing) ---
 			let itemsResult;
@@ -162,34 +179,32 @@ export const createUserRouter = (pool: Pool) => {
 				const ownedItemsQuery = `
                     SELECT pi.itemid, pi.quantity
                     FROM player_items pi
-                             JOIN subcategory_items sci ON sci.itemid = pi.itemid
+                        JOIN subcategory_items sci ON sci.itemid = pi.itemid
                     WHERE pi.playerid = $1
-                      AND sci.subcategoryid = $2
-                    ORDER BY sci.id;
+                    	AND sci.subcategoryid = $2
+                    ORDER BY sci.displayorder;
 				`;
 				itemsResult = await client.query(ownedItemsQuery, [playerid, subcategoryId]);
 				itemsResult.rows.forEach(row => {
-					items.push({ itemId: row.itemid, quantity: row.quantity });
+					items.push({itemId: row.itemid, quantity: row.quantity});
 				});
 			} else { // mode === 'missing'
 				const missingItemsQuery = `
-	                SELECT sci.itemid
-	                FROM subcategory_items sci
-	                WHERE sci.subcategoryid = $2
-	                AND NOT EXISTS (
-	                    SELECT 1
-	                    FROM player_items pi
-	                    WHERE pi.playerid = $1
-	                    AND pi.itemid = sci.itemid
-	                ) 
-	                ORDER BY sci.id;
-            	`;
+                    SELECT sci.itemid
+                    FROM subcategory_items sci
+                    WHERE sci.subcategoryid = $2
+                    	AND NOT EXISTS (SELECT 1
+                                      FROM player_items pi
+                                      WHERE pi.playerid = $1
+                                        AND pi.itemid = sci.itemid)
+                    ORDER BY sci.displayorder;
+				`;
 				itemsResult = await client.query(missingItemsQuery, [playerid, subcategoryId]);
 				itemsResult.rows.forEach(row => {
-					items.push({ itemId: row.itemid, quantity: 1 }); // Missing items have quantity 0
+					items.push({itemId: row.itemid, quantity: 1}); // Missing items have quantity 0
 				});
 			}
-			log.debug({ username, subcategoryAliased, mode, itemCount: items.length }, 'Items fetched');
+			log.debug({username, subcategoryAliased, mode, itemCount: items.length}, 'Items fetched');
 
 			const response = {
 				username: playerUsername,
@@ -202,9 +217,9 @@ export const createUserRouter = (pool: Pool) => {
 			try {
 				const responseString = JSON.stringify(response);
 				await redisConnection.set(cacheKey, responseString, 'EX', cacheTTLSeconds);
-				log.debug({ cacheKey, ttl: cacheTTLSeconds }, 'Result stored in Redis cache');
+				log.debug({cacheKey, ttl: cacheTTLSeconds}, 'Result stored in Redis cache');
 			} catch (redisSetError) {
-				log.error({ err: redisSetError, cacheKey }, 'Redis SET command failed');
+				log.error({err: redisSetError, cacheKey}, 'Redis SET command failed');
 			}
 
 			res.json(response);
@@ -233,12 +248,13 @@ export const createUserRouter = (pool: Pool) => {
 			const userExistsQuery = `
                 SELECT 1
                 FROM players
-                WHERE username ILIKE $1 AND profile_visible_on_website = true;
+                WHERE username ILIKE $1
+                  AND profile_visible_on_website = true;
 			`;
 			const userExistsResult = await client.query(userExistsQuery, [username]);
 
 			if (userExistsResult.rowCount === 0) {
-				log.warn({ username }, 'Username not found or profile not visible.');
+				log.warn({username}, 'Username not found or profile not visible.');
 				res.status(404).send('Username not found or profile not visible.');
 				return;
 			}
@@ -248,90 +264,81 @@ export const createUserRouter = (pool: Pool) => {
                     -- Step 1: Get the accounthash for the target player
                     SELECT id
                     FROM players
-                    WHERE username ILIKE $1 AND profile_visible_on_website = true
-                ),
+                    WHERE username ILIKE $1
+                      AND profile_visible_on_website = true),
                      all_items AS (
                          -- Step 2: Collect all items for each subcategory
-                         SELECT
-                             si.id,
-                             si.itemid,
-                             si.originalitemid,
-                             si.subcategoryid,
-                             si.image_url,
-                             si.itemname,
-                             s.categoryid,
-                             s.name AS subcategory_name,
-                             c.name AS category_name
+                         SELECT si.id,
+                                si.itemid,
+                                si.originalitemid,
+                                si.subcategoryid,
+                                si.image_url,
+                                si.itemname,
+                                s.categoryid,
+                                s.name AS subcategory_name,
+                                c.name AS category_name
                          FROM subcategory_items si
                                   JOIN subcategories s ON s.id = si.subcategoryid
                                   JOIN categories c ON c.id = s.categoryid
-                         ORDER BY si.id
-                     ),
+                         ORDER BY si.id),
                      player_items AS (
                          -- Step 3: Collect items owned by the player
-                         SELECT
-                             pi.itemid,
-                             pi.quantity,
-                             si.subcategoryid
+                         SELECT pi.itemid,
+                                pi.quantity,
+                                si.subcategoryid
                          FROM player_acc pa
                                   JOIN player_items pi ON pi.playerid = pa.id
                                   JOIN subcategory_items si ON si.itemid = pi.itemid
-                         ORDER BY si.id
-                     ),
+                         ORDER BY si.id),
                      items_by_subcategory AS (
                          -- Step 4: Aggregate both owned and missing items for each subcategory
-                         SELECT
-                             ai.subcategoryid,
-                             ai.subcategory_name,
-                             ai.categoryid,
-                             ai.category_name,
-                             json_agg(
-                                     json_build_object(
-                                             'item_id', ai.originalitemid,
-                                             'quantity', COALESCE(pi.quantity, 0), -- 0 for missing items
-                                             'image_url', ai.image_url,
-                                             'item_name', ai.itemname,
-                                             'owned', CASE WHEN pi.itemid IS NOT NULL THEN true ELSE false END
-                                     ) ORDER BY (COALESCE(pi.quantity, 0) > 0) DESC, ai.id
-                             ) AS items_json,
-                             COUNT(CASE WHEN pi.quantity > 0 THEN 1 END) as owned_items_count,
-                             COALESCE(MAX(pkc.kc), 0) AS kc -- Include player_kc.kc
+                         SELECT ai.subcategoryid,
+                                ai.subcategory_name,
+                                ai.categoryid,
+                                ai.category_name,
+                                json_agg(
+                                        json_build_object(
+                                                'item_id', ai.originalitemid,
+                                                'quantity', COALESCE(pi.quantity, 0), -- 0 for missing items
+                                                'image_url', ai.image_url,
+                                                'item_name', ai.itemname,
+                                                'owned', CASE WHEN pi.itemid IS NOT NULL THEN true ELSE false END
+                                        ) ORDER BY (COALESCE(pi.quantity, 0) > 0) DESC, ai.id
+                                )                                           AS items_json,
+                                COUNT(CASE WHEN pi.quantity > 0 THEN 1 END) as owned_items_count,
+                                COALESCE(MAX(pkc.kc), 0)                    AS kc -- Include player_kc.kc
                          FROM all_items ai
                                   LEFT JOIN player_items pi ON ai.itemid = pi.itemid
                                   LEFT JOIN player_kc pkc ON pkc.subcategoryid = ai.subcategoryid
                              AND pkc.playerid = (SELECT player_acc.id FROM player_acc)
-                         GROUP BY ai.subcategoryid, ai.subcategory_name, ai.categoryid, ai.category_name
-                     ),
+                         GROUP BY ai.subcategoryid, ai.subcategory_name, ai.categoryid, ai.category_name),
                      subcategories_by_category AS (
                          -- Step 5: Aggregate subcategories for each category
-                         SELECT
-                             categoryid,
-                             category_name,
-                             json_agg(
-                                     json_build_object(
-                                             'name', subcategory_name,
-                                             'items', items_json,
-                                             'owned_items_count', owned_items_count,
-                                             'kc', kc -- Add kc to the subcategory
-                                     ) ORDER BY subcategory_name -- Consistent output order
-                             ) AS subcategories_json
+                         SELECT categoryid,
+                                category_name,
+                                json_agg(
+                                        json_build_object(
+                                                'name', subcategory_name,
+                                                'items', items_json,
+                                                'owned_items_count', owned_items_count,
+                                                'kc', kc -- Add kc to the subcategory
+                                        ) ORDER BY subcategory_name -- Consistent output order
+                                ) AS subcategories_json
                          FROM items_by_subcategory
-                         GROUP BY categoryid, category_name
-                     )
+                         GROUP BY categoryid, category_name)
                 -- Step 6: Final aggregation of categories
-                SELECT
-                    json_agg(
-                            json_build_object(
-                                    'category_name', category_name,
-                                    'subcategories', subcategories_json
-                            ) ORDER BY category_name -- Consistent output order
-                    ) AS categories
+                SELECT json_agg(
+                               json_build_object(
+                                       'category_name', category_name,
+                                       'subcategories', subcategories_json
+                               ) ORDER BY category_name -- Consistent output order
+                       ) AS categories
                 FROM subcategories_by_category;
 			`;
 			const metadataResult = await client.query(metadataQuery, [username]);
 
 			if (metadataResult.rows.length === 0 || !metadataResult.rows[0].categories) {
-				log.warn({ username }, 'No data found for the user.');
+				log.warn({username}, 'No data found for the user.');
 				res.status(404).send('No data found for the user.');
 				return;
 			}
