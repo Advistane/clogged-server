@@ -46,6 +46,12 @@
 		case "dks":
 			return "Dagannoth Kings";
 
+		case "doom":
+		case "delve":
+		case "mocha":
+		case "poop":
+			return "Doom of Mokhaiotl";
+
 		case "duke":
 		case "succ":
 		case "succelus":
