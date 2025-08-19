@@ -162,6 +162,18 @@ services:
     networks:
       - logging-network
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3100/ready || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
 
   promtail:
     image: grafana/promtail:3.5 # Use specific, stable version
@@ -193,6 +205,18 @@ services:
       - logging-network
       - traefik-public # Connect to Traefik's public network
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations: # This forces Docker to guarantee Grafana gets enough resources to run
+          memory: 256M
     labels:
       # --- Traefik Labels ---
       - "traefik.enable=true"
@@ -211,6 +235,7 @@ networks:
     driver: bridge
   traefik-public:
     driver: bridge
+    name: traefik-public
 
 volumes:
   postgres_data:
