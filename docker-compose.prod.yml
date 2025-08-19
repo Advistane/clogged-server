@@ -220,6 +220,7 @@ services:
     labels:
       # --- Traefik Labels ---
       - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
       # Define router for HTTPS traffic
       - "traefik.http.routers.grafana-secure.rule=Host(`${GRAFANA_HOSTNAME}`)"
       - "traefik.http.routers.grafana-secure.entrypoints=websecure"
