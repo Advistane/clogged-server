@@ -171,6 +171,7 @@ jobs:
             echo ".env file is ready."
 
             # --- STEP 2: Export ONLY the variables needed for the script itself ---
+            export APP_DEPLOY_PATH=${{ vars.DEPLOY_PATH }}
             export GHCR_USER=${{ github.repository_owner }}
             export GHCR_TOKEN=${{ secrets.GHCR_TOKEN }}
             export COMPOSE_FILE_NAME=${{ vars.COMPOSE_FILE_NAME }}
