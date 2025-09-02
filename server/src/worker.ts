@@ -159,6 +159,7 @@ const processClogUpdate = async (job: Job<UserCollectionData>) => {
 
 		} else {
 			log.info('No subcategory KCs provided in job data.');
+			log.debug(job.data)
 		}
 
 		await client.query('COMMIT');
