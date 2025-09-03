@@ -127,6 +127,18 @@ def upsert_subcategory_items(conn, subcategory_id: int, items: list):
 
             conn.commit()
             logging.info(f"Upserted items for subcategory {subcategory_id}")
+
+            update_total_sql = """
+                               UPDATE subcategories
+                               SET total = (SELECT COUNT(*) \
+                                            FROM subcategory_items \
+                                            WHERE subcategoryid = %s)
+                               WHERE id = %s; \
+                               """
+            cur.execute(update_total_sql, (subcategory_id, subcategory_id))
+            conn.commit()
+            logging.info(f"Updated total for subcategory {subcategory_id}")
+
     except psycopg2.Error as e:
         logging.error(f"Database error during upsert of items for subcategory {subcategory_id}: {e}")
         conn.rollback()  # Roll back the transaction on error
