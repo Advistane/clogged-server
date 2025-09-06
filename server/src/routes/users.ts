@@ -115,17 +115,16 @@ export const createUserRouter = (pool: Pool) => {
 		const client = await pool.connect();
 		try {
 			let metadataQuery = `
-                SELECT 
-					p.id AS playerid,
-					p.username AS player_username,
-					s.id AS subcategory_id,
-					s.name AS validated_subcategory_name,
-					s.total AS total,
-					COALESCE(pkc.kc, 0) AS kc
+                SELECT p.id                AS playerid,
+                       p.username          AS player_username,
+                       s.id                AS subcategory_id,
+                       s.name              AS validated_subcategory_name,
+                       s.total             AS total,
+                       COALESCE(pkc.kc, 0) AS kc
                 FROM players p
-                	JOIN subcategories s ON s.name = $2
-                	LEFT JOIN
-                     	player_kc pkc ON pkc.playerid = p.id AND pkc.subcategoryId = s.id AND pkc.kc != -1
+                         JOIN subcategories s ON s.name = $2
+                         LEFT JOIN
+                     player_kc pkc ON pkc.playerid = p.id AND pkc.subcategoryId = s.id AND pkc.kc != -1
                 WHERE p.username ILIKE $1
 			`;
 			if (otherLookup) {
@@ -179,9 +178,9 @@ export const createUserRouter = (pool: Pool) => {
 				const ownedItemsQuery = `
                     SELECT pi.itemid, pi.quantity
                     FROM player_items pi
-                        JOIN subcategory_items sci ON sci.itemid = pi.itemid
+                             JOIN subcategory_items sci ON sci.itemid = pi.itemid
                     WHERE pi.playerid = $1
-                    	AND sci.subcategoryid = $2
+                      AND sci.subcategoryid = $2
                     ORDER BY sci.displayorder;
 				`;
 				itemsResult = await client.query(ownedItemsQuery, [playerid, subcategoryId]);
@@ -193,7 +192,7 @@ export const createUserRouter = (pool: Pool) => {
                     SELECT sci.itemid
                     FROM subcategory_items sci
                     WHERE sci.subcategoryid = $2
-                    	AND NOT EXISTS (SELECT 1
+                      AND NOT EXISTS (SELECT 1
                                       FROM player_items pi
                                       WHERE pi.playerid = $1
                                         AND pi.itemid = sci.itemid)
@@ -267,29 +266,34 @@ export const createUserRouter = (pool: Pool) => {
                     WHERE username ILIKE $1
                       AND profile_visible_on_website = true),
                      all_items AS (
-                         -- Step 2: Collect all items for each subcategory
-                         SELECT si.id,
+                         -- Step 2: Collect all UNIQUE items for each subcategory
+                         -- We now also select MIN(displayOrder) to use for sorting later.
+                         SELECT MIN(si.id)             as id,
                                 si.itemid,
                                 si.originalitemid,
                                 si.subcategoryid,
-                                si.image_url,
-                                si.itemname,
+                                MIN(si.image_url)      as image_url,
+                                MIN(si.itemname)       as itemname,
+                                MIN(si."displayorder") as display_order, -- ADDED THIS LINE
                                 s.categoryid,
-                                s.name AS subcategory_name,
-                                c.name AS category_name
+                                s.name                 AS subcategory_name,
+                                c.name                 AS category_name
                          FROM subcategory_items si
                                   JOIN subcategories s ON s.id = si.subcategoryid
                                   JOIN categories c ON c.id = s.categoryid
-                         ORDER BY si.id),
+                         GROUP BY si.itemid,
+                                  si.originalitemid,
+                                  si.subcategoryid,
+                                  s.categoryid,
+                                  s.name,
+                                  c.name),
                      player_items AS (
-                         -- Step 3: Collect items owned by the player
+                         -- Step 3: Collect items owned by the player, ensuring one entry per itemid.
                          SELECT pi.itemid,
-                                pi.quantity,
-                                si.subcategoryid
+                                SUM(pi.quantity) as quantity
                          FROM player_acc pa
                                   JOIN player_items pi ON pi.playerid = pa.id
-                                  JOIN subcategory_items si ON si.itemid = pi.itemid
-                         ORDER BY si.id),
+                         GROUP BY pi.itemid),
                      items_by_subcategory AS (
                          -- Step 4: Aggregate both owned and missing items for each subcategory
                          SELECT ai.subcategoryid,
@@ -299,19 +303,23 @@ export const createUserRouter = (pool: Pool) => {
                                 json_agg(
                                         json_build_object(
                                                 'item_id', ai.originalitemid,
-                                                'quantity', COALESCE(pi.quantity, 0), -- 0 for missing items
+                                                'quantity', COALESCE(pi.quantity, 0),
                                                 'image_url', ai.image_url,
                                                 'item_name', ai.itemname,
-                                                'owned', CASE WHEN pi.itemid IS NOT NULL THEN true ELSE false END
-                                        ) ORDER BY (COALESCE(pi.quantity, 0) > 0) DESC, ai.id
-                                )                                           AS items_json,
-                                COUNT(CASE WHEN pi.quantity > 0 THEN 1 END) as owned_items_count,
-                                COALESCE(MAX(pkc.kc), 0)                    AS kc -- Include player_kc.kc
+                                                'owned', pi.itemid IS NOT NULL
+                                        )
+                                        ORDER BY (pi.quantity IS NOT NULL AND pi.quantity > 0) DESC, ai.display_order
+                                )                                               AS items_json,
+                                COUNT(pi.itemid) FILTER (WHERE pi.quantity > 0) as owned_items_count,
+                                COALESCE(MAX(pkc.kc), 0)                        AS kc
                          FROM all_items ai
                                   LEFT JOIN player_items pi ON ai.itemid = pi.itemid
-                                  LEFT JOIN player_kc pkc ON pkc.subcategoryid = ai.subcategoryid
-                             AND pkc.playerid = (SELECT player_acc.id FROM player_acc)
-                         GROUP BY ai.subcategoryid, ai.subcategory_name, ai.categoryid, ai.category_name),
+                                  LEFT JOIN player_kc pkc ON pkc.subcategoryid = ai.subcategoryid AND
+                                                             pkc.playerid = (SELECT id FROM player_acc)
+                         GROUP BY ai.subcategoryid,
+                                  ai.subcategory_name,
+                                  ai.categoryid,
+                                  ai.category_name),
                      subcategories_by_category AS (
                          -- Step 5: Aggregate subcategories for each category
                          SELECT categoryid,
@@ -321,17 +329,17 @@ export const createUserRouter = (pool: Pool) => {
                                                 'name', subcategory_name,
                                                 'items', items_json,
                                                 'owned_items_count', owned_items_count,
-                                                'kc', kc -- Add kc to the subcategory
-                                        ) ORDER BY subcategory_name -- Consistent output order
+                                                'kc', kc
+                                        ) ORDER BY subcategory_name
                                 ) AS subcategories_json
                          FROM items_by_subcategory
                          GROUP BY categoryid, category_name)
-                -- Step 6: Final aggregation of categories
+-- Step 6: Final aggregation of categories
                 SELECT json_agg(
                                json_build_object(
                                        'category_name', category_name,
                                        'subcategories', subcategories_json
-                               ) ORDER BY category_name -- Consistent output order
+                               ) ORDER BY category_name
                        ) AS categories
                 FROM subcategories_by_category;
 			`;
