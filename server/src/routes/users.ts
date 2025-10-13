@@ -28,6 +28,7 @@ export const createUserRouter = (pool: Pool) => {
 	router.put('/update', async (req, res): Promise<any> => {
 		const requestBody: UserCollectionData = req.body;
 		const accountHash = requestBody.accountHash;
+		const gameMode = requestBody.gameMode;
 		const username = requestBody.username;
 		const profileVisible = requestBody.profileVisible;
 		const collectedItems = requestBody.collectedItems;
@@ -48,10 +49,12 @@ export const createUserRouter = (pool: Pool) => {
 		const jobPayload: UserCollectionData = {
 			username,
 			accountHash,
+			gameMode,
 			collectedItems,
 			subcategories,
 			profileVisible: profileVisible || false,
 		};
+
 		req.log.info({jobPayload}, 'Clog update job payload');
 
 		try {
@@ -73,10 +76,12 @@ export const createUserRouter = (pool: Pool) => {
 
 	router.get('/:username/:subcategoryName', async (req, res): Promise<any> => {
 		const log = req.log;
+
 		const username: string = decodeURIComponent(req.params.username);
 		const subcategoryName: string = req.params.subcategoryName;
 		const mode: string = (req.query.mode as string) || 'owned';
 		const otherLookup: boolean = (req.query.other as string) === 'true' || false;
+		const gameMode: string = (req.query.gameMode as string) || 'STANDARD';
 
 		if (mode !== 'owned' && mode !== 'missing') {
 			log.warn({username, mode}, 'Invalid mode parameter');
@@ -85,7 +90,7 @@ export const createUserRouter = (pool: Pool) => {
 
 		let subcategoryAliased: string = getSubcategoryAlias(subcategoryName);
 
-		log.info({username, subcategoryAliased}, 'Fetching collection log data request');
+		log.info({username, subcategoryAliased, mode, otherLookup, profileMode: gameMode}, 'Fetching collection log data request');
 
 		if (!username || !subcategoryAliased) {
 			res.status(400).send('Invalid username or subcategory name');
@@ -93,7 +98,7 @@ export const createUserRouter = (pool: Pool) => {
 		}
 
 		// Check cache first
-		const cacheKey = `clog:${username}:${subcategoryAliased}:${mode}:${otherLookup}`;
+		const cacheKey = `clog:${username}:${subcategoryAliased}:${mode}:${otherLookup}:${gameMode}`;
 		const cacheTTLSeconds = 10;
 		try {
 			const cachedDataString = await redisConnection.get(cacheKey);
@@ -114,26 +119,28 @@ export const createUserRouter = (pool: Pool) => {
 
 		const client = await pool.connect();
 		try {
-			let metadataQuery = `
-                SELECT 
-					p.id AS playerid,
-					p.username AS player_username,
-					s.id AS subcategory_id,
-					s.name AS validated_subcategory_name,
-					s.total AS total,
-					COALESCE(pkc.kc, 0) AS kc
+			let finalMetadataQuery = `
+                SELECT p.username          AS player_username,
+                       pr.id               AS profile_id, -- This is the new ID we need
+                       s.id                AS subcategory_id,
+                       s.name              AS validated_subcategory_name,
+                       s.total             AS total,
+                       COALESCE(pkc.kc, 0) AS kc
                 FROM players p
-                	JOIN subcategories s ON s.name = $2
-                	LEFT JOIN
-                     	player_kc pkc ON pkc.playerid = p.id AND pkc.subcategoryId = s.id AND pkc.kc != -1
+                         JOIN profiles pr ON p.id = pr.player_id
+                         JOIN subcategories s ON s.name = $2
+                         LEFT JOIN player_kc pkc ON pkc.profile_id = pr.id AND pkc.subcategoryId = s.id AND pkc.kc != -1
                 WHERE p.username ILIKE $1
+                AND pr.game_mode = $3
 			`;
-			if (otherLookup) {
-				metadataQuery += ' AND p.profile_visible_on_website = true';
-			}
-			metadataQuery += ';';
 
-			const metadataResult = await client.query(metadataQuery, [username, subcategoryAliased]);
+			if (otherLookup) {
+				finalMetadataQuery += ' AND p.profile_visible_on_website = true';
+			}
+
+			finalMetadataQuery += ';';
+
+			const metadataResult = await client.query(finalMetadataQuery, [username, subcategoryAliased, gameMode]);
 
 			if (metadataResult.rows.length === 0) {
 				log.warn({
@@ -153,7 +160,7 @@ export const createUserRouter = (pool: Pool) => {
 			}
 
 			const {
-				playerid: playerid,
+				profile_id: profileId,
 				player_username: playerUsername,
 				subcategory_id: subcategoryId,
 				validated_subcategory_name: validatedSubcategoryName,
@@ -164,7 +171,7 @@ export const createUserRouter = (pool: Pool) => {
 			log.debug({
 				username,
 				subcategoryAliased,
-				playerid,
+				profileId,
 				subcategoryId,
 				validatedSubcategoryName,
 				total,
@@ -179,12 +186,12 @@ export const createUserRouter = (pool: Pool) => {
 				const ownedItemsQuery = `
                     SELECT pi.itemid, pi.quantity
                     FROM player_items pi
-                        JOIN subcategory_items sci ON sci.itemid = pi.itemid
-                    WHERE pi.playerid = $1
-                    	AND sci.subcategoryid = $2
+                    JOIN subcategory_items sci ON sci.itemid = pi.itemid
+                    WHERE pi.profile_id = $1
+                    AND sci.subcategoryid = $2
                     ORDER BY sci.displayorder;
 				`;
-				itemsResult = await client.query(ownedItemsQuery, [playerid, subcategoryId]);
+				itemsResult = await client.query(ownedItemsQuery, [profileId, subcategoryId]);
 				itemsResult.rows.forEach(row => {
 					items.push({itemId: row.itemid, quantity: row.quantity});
 				});
@@ -193,13 +200,13 @@ export const createUserRouter = (pool: Pool) => {
                     SELECT sci.itemid
                     FROM subcategory_items sci
                     WHERE sci.subcategoryid = $2
-                    	AND NOT EXISTS (SELECT 1
+                      AND NOT EXISTS (SELECT 1
                                       FROM player_items pi
-                                      WHERE pi.playerid = $1
+                                      WHERE pi.profile_id = $1
                                         AND pi.itemid = sci.itemid)
                     ORDER BY sci.displayorder;
 				`;
-				itemsResult = await client.query(missingItemsQuery, [playerid, subcategoryId]);
+				itemsResult = await client.query(missingItemsQuery, [profileId, subcategoryId]);
 				itemsResult.rows.forEach(row => {
 					items.push({itemId: row.itemid, quantity: 1}); // Missing items have quantity 0
 				});
