@@ -146,6 +146,28 @@ services:
     networks:
       - app-network
 
+  migrator:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.prod
+    container_name: clogged_migrator
+    command: npm run migrate:up
+    environment:
+      PGHOST: db                     # Use the service name 'db'
+      PGPORT: 5432                   # Standard PG Port
+      PGUSER: ${POSTGRES_USER}         # Use the App User (ensure this user has migration permissions)
+      PGPASSWORD: ${POSTGRES_PASSWORD}   # App User Password
+      PGDATABASE: ${POSTGRES_DB}       # The Database Name
+      DB_NAME: ${POSTGRES_DB}
+    volumes:
+      - ./server:/app/server
+      - /app/server/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+
   loki:
     image: grafana/loki:3.5 # Use specific, stable version
     container_name: loki_prod
