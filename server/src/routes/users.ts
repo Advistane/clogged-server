@@ -28,7 +28,7 @@ export const createUserRouter = (pool: Pool) => {
 	router.put('/update', async (req, res): Promise<any> => {
 		const requestBody: UserCollectionData = req.body;
 		const accountHash = requestBody.accountHash;
-		const gameMode = requestBody.gameMode;
+		const gameMode = requestBody.gameMode || 'STANDARD';
 		const username = requestBody.username;
 		const profileVisible = requestBody.profileVisible;
 		const collectedItems = requestBody.collectedItems;
