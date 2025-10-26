@@ -72,8 +72,9 @@ const processClogUpdate = async (job: Job<UserCollectionData>) => {
 		const profileInsertQuery = `
             INSERT INTO profiles (player_id, game_mode)
             VALUES ($1, $2)
-            ON CONFLICT DO NOTHING
-            RETURNING id`;
+            ON CONFLICT (player_id, game_mode) DO UPDATE
+                SET player_id = EXCLUDED.player_id -- Dummy update to trigger conflict resolution
+            RETURNING id;`;
 
 		const profileInsertResult = await client.query(profileInsertQuery, [playerId, gameMode]);
 
