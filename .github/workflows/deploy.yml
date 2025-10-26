@@ -160,6 +160,7 @@ jobs:
             B2_IMAGES_BUCKET_NAME="${{ secrets.B2_IMAGES_BUCKET_NAME }}"
             B2_IMAGES_SECRET_ACCESS_KEY="${{ secrets.B2_IMAGES_SECRET_ACCESS_KEY }}"
             ENDPOINT_SECRET_KEY="${{ secrets.ENDPOINT_SECRET_KEY }}"
+            LOG_LEVEL="${{ vars.LOG_LEVEL }}"
             DB_IMAGE_NAME="${{ needs.build-and-push.outputs.db_image }}"
             SERVER_IMAGE_NAME="${{ needs.build-and-push.outputs.server_image }}"
             DATA_LOADER_IMAGE_NAME="${{ needs.build-and-push.outputs.dataloader_image }}"

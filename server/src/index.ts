@@ -2,7 +2,6 @@
 import { Pool } from 'pg';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import {createClogRouter} from "./routes/clog";
 import logger from './utils/logger';
 import {pinoHttp} from "pino-http";
 
@@ -89,7 +88,6 @@ app.get('/kc-aliases', async (req, res): Promise<any> => {
 	}
 });
 
-app.use('/api/clog', createClogRouter(pool));
 app.use('/groups', createGroupsRouter(pool));
 app.use('/users', createUserRouter(pool));
 

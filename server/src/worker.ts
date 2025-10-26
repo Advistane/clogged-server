@@ -1,4 +1,4 @@
-﻿import { Worker, Job } from 'bullmq';
+﻿import {Worker, Job} from 'bullmq';
 import {Pool} from 'pg';
 import IORedis from 'ioredis';
 import dotenv from 'dotenv';
@@ -41,8 +41,8 @@ pool.connect((err, client, release) => {
 });
 
 const processClogUpdate = async (job: Job<UserCollectionData>) => {
-	const { username, accountHash, profileVisible, collectedItems, subcategories } = job.data;
-	const log = logger.child({ jobId: job.id, accountHash, username }); // Contextual logger
+	const {username, accountHash, gameMode, profileVisible, collectedItems, subcategories} = job.data;
+	const log = logger.child({jobId: job.id, accountHash, username}); // Contextual logger
 	log.info(`Processing clog update job started`);
 
 	const client = await pool.connect();
@@ -55,9 +55,10 @@ const processClogUpdate = async (job: Job<UserCollectionData>) => {
 		const playerInsertQuery = `
             INSERT INTO players (accountHash, username, profile_visible_on_website)
             VALUES ($1, $2, $3)
-            ON CONFLICT (accountHash) DO UPDATE SET username = EXCLUDED.username, profile_visible_on_website = EXCLUDED.profile_visible_on_website
+            ON CONFLICT (accountHash) DO UPDATE SET username                   = EXCLUDED.username,
+                                                    profile_visible_on_website = EXCLUDED.profile_visible_on_website
             RETURNING id;
-        `;
+		`;
 
 		const playerInsertResult = await client.query(playerInsertQuery, [accountHash, username, profileVisible]);
 		const playerId = playerInsertResult.rows[0].id; // Store the id
@@ -67,6 +68,32 @@ const processClogUpdate = async (job: Job<UserCollectionData>) => {
 		}
 
 		log.debug(`Player info processed for accountHash: ${accountHash}, playerId: ${playerId}`);
+
+		const profileInsertQuery = `
+            INSERT INTO profiles (player_id, game_mode)
+            VALUES ($1, $2)
+            ON CONFLICT (player_id, game_mode) DO UPDATE
+                SET player_id = EXCLUDED.player_id -- Dummy update to trigger conflict resolution
+            RETURNING id;`;
+
+		const profileInsertResult = await client.query(profileInsertQuery, [playerId, gameMode]);
+
+		const profileId = profileInsertResult.rows[0].id; // Store the id
+		if (!profileId) {
+			log.warn(`Profile ID not found for accountHash: ${accountHash}`);
+			throw new Error(`Profile ID not found for accountHash: ${accountHash}`);
+		}
+
+		log.debug(`Profile info processed for accountHash: ${accountHash}, profileId: ${profileId}`);
+
+		log.debug(`Deleting all existing player items for profileId: ${profileId}`);
+		const deleteItemsQuery = `
+            DELETE
+            FROM player_items
+            WHERE profile_id = $1;
+		`;
+		await client.query(deleteItemsQuery, [profileId]);
+
 
 		// Batch Insert/Update Collected Items
 		if (collectedItems && collectedItems.length > 0) {
@@ -89,21 +116,24 @@ const processClogUpdate = async (job: Job<UserCollectionData>) => {
 					quantity = -1;
 				}
 
-				itemValues.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2})`);
+				itemValues.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3})`);
 
 				itemParams.push(playerId);
 				itemParams.push(itemId);
 				itemParams.push(quantity);
+				itemParams.push(profileId);
 
-				paramIndex += 3;
+				paramIndex += 4;
 			}
 
 			if (itemValues.length > 0) {
 				const itemInsertQuery = `
-                    INSERT INTO player_items (playerid, itemid, quantity)
-                    VALUES ${itemValues.join(', ')}
-                    ON CONFLICT (playerid, itemid) DO UPDATE SET quantity = EXCLUDED.quantity;
-                `;
+                    INSERT INTO player_items (playerid, itemid, quantity, profile_id)
+                    VALUES
+                    ${itemValues.join(', ')}
+                    ON CONFLICT (profile_id, itemid)
+                    DO UPDATE SET quantity = EXCLUDED.quantity;
+				`;
 
 				await client.query(itemInsertQuery, itemParams);
 				log.debug(`Batch item update completed for ${itemValues.length} items.`);
@@ -114,6 +144,14 @@ const processClogUpdate = async (job: Job<UserCollectionData>) => {
 		} else {
 			log.info('No collected items provided in job data.');
 		}
+
+		log.debug(`Deleting all existing subcategory KCs for profileId: ${profileId}`);
+		const deleteKcQuery = `
+            DELETE
+            FROM player_kc
+            WHERE profile_id = $1;
+		`;
+		await client.query(deleteKcQuery, [profileId]);
 
 		// Batch Insert/Update Subcategory KCs
 		if (subcategories && subcategories.length > 0) {
@@ -136,21 +174,24 @@ const processClogUpdate = async (job: Job<UserCollectionData>) => {
 					kc = -1;
 				}
 
-				kcValues.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2})`);
+				kcValues.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3})`);
 
 				kcParams.push(playerId);
 				kcParams.push(subcategoryId);
 				kcParams.push(kc);
+				kcParams.push(profileId);
 
-				paramIndex += 3;
+				paramIndex += 4;
 			}
 
 			if (kcValues.length > 0) {
 				const kcInsertQuery = `
-                    INSERT INTO player_kc (playerid, subcategoryid, kc)
-                    VALUES ${kcValues.join(', ')}
-                    ON CONFLICT (playerid, subcategoryid) DO UPDATE SET kc = EXCLUDED.kc;
-                `;
+                    INSERT INTO player_kc (playerid, subcategoryid, kc, profile_id)
+                    VALUES
+                    ${kcValues.join(', ')}
+                    ON CONFLICT (profile_id, subcategoryid)
+                    DO UPDATE SET kc = EXCLUDED.kc;
+				`;
 				await client.query(kcInsertQuery, kcParams);
 				log.debug(`Batch KC update completed for ${kcValues.length} subcategories.`);
 			} else {
