@@ -2,7 +2,7 @@
 
 services:
   traefik:
-    image: traefik:v3.3.6 # Or v2.11 if you prefer consistency with earlier examples
+    image: traefik:v3.6.2
     container_name: traefik_prod # Corrected name
     restart: always
     command:
