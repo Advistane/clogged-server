@@ -24,7 +24,7 @@ export const createGroupsRouter = (pool: Pool) => {
 			joined: false,
 			message: "Group deletion is not implemented yet.",
 		}
-		return res.status(200).send(response);
+		return res.status(501).send(response);
 	});
 
 	router.post("/:groupName", async (req, res): Promise<any> => {
@@ -145,7 +145,7 @@ export const createGroupsRouter = (pool: Pool) => {
 			}
 
 		} catch (error) {
-			log.error(`Error processing request: ${error}`);
+			log.error(error, 'Error processing request');
 			await client.query("ROLLBACK");
 			log.debug("Transaction rolled back");
 			return res.status(500).json({error: "Internal server error"});

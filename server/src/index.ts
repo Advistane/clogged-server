@@ -1,4 +1,4 @@
-﻿import express, { Request, Response } from 'express';
+﻿import express, { Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -71,7 +71,7 @@ app.get('/healthz', async (req, res) => {
 		await redisConnection.ping(); // Replace with your actual Redis client method
 		res.status(200).send('OK');
 	} catch (error) {
-		console.error('Health check failed:', error);
+		logger.error(error, 'Health check failed');
 		res.status(503).send('Service Unavailable'); // 503 Service Unavailable
 	} finally {
 		client.release();
@@ -92,11 +92,24 @@ app.use('/groups', createGroupsRouter(pool));
 app.use('/users', createUserRouter(pool));
 
 // Error handling middleware
-app.use((err: Error, req: Request, res: Response, next: any) => {
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 	req.log.error(err, 'Unhandled error');
 	res.status(500).send('Something broke!');
 });
 
-app.listen(port, () => {
-	console.log(`Server running on port ${port}`);
+const server = app.listen(port, () => {
+	logger.info(`Server running on port ${port}`);
 });
+
+// --- Graceful Shutdown ---
+const gracefulShutdown = async () => {
+	logger.info('Server shutting down gracefully...');
+	server.close();
+	await redisConnection.quit();
+	await pool.end();
+	logger.info('Server shutdown complete.');
+	process.exit(0);
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);

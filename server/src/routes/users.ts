@@ -80,7 +80,7 @@ export const createUserRouter = (pool: Pool) => {
 		const username: string = decodeURIComponent(req.params.username);
 		const subcategoryName: string = req.params.subcategoryName;
 		const mode: string = (req.query.mode as string) || 'owned';
-		const otherLookup: boolean = (req.query.other as string) === 'true' || false;
+		const otherLookup: boolean = (req.query.other as string) === 'true';
 		const gameMode: string = (req.query.gameMode as string) || 'STANDARD';
 
 		if (mode !== 'owned' && mode !== 'missing') {
@@ -208,7 +208,7 @@ export const createUserRouter = (pool: Pool) => {
 				`;
 				itemsResult = await client.query(missingItemsQuery, [profileId, subcategoryId]);
 				itemsResult.rows.forEach(row => {
-					items.push({itemId: row.itemid, quantity: 1}); // Missing items have quantity 0
+					items.push({itemId: row.itemid, quantity: 1});
 				});
 			}
 			log.debug({username, subcategoryAliased, mode, itemCount: items.length}, 'Items fetched');
