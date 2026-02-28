@@ -10,7 +10,7 @@ GITHUB_RELEASE_ENDPOINT = "https://api.github.com/repos/abextm/osrs-cache/releas
 
 def download_latest_cache():
     try:
-        logging.info(f"Fetching latest release information from {GITHUB_RELEASE_ENDPOINT}...")
+        logging.debug(f"Fetching latest release information from {GITHUB_RELEASE_ENDPOINT}...")
         response = requests.get(GITHUB_RELEASE_ENDPOINT, timeout=30)
         response.raise_for_status()  # Raise an exception for HTTP errors (4xx or 5xx)
     except requests.exceptions.HTTPError as e:
@@ -43,7 +43,7 @@ def download_latest_cache():
     asset_name = target_asset["name"]
     download_url = target_asset["browser_download_url"]
 
-    logging.info(f"Downloading from: {download_url}")
+    logging.debug(f"Downloading from: {download_url}")
 
     try:
         with requests.get(download_url, stream=True, timeout=120) as r:
@@ -58,11 +58,10 @@ def download_latest_cache():
                     downloaded_size += len(chunk)
                     if total_size > 0:
                         progress = (downloaded_size / total_size) * 100
-                        logging.debug(f"\rDownloading '{asset_name}'... {progress:.2f}% complete", end="")
+                        logging.debug(f"Downloading '{asset_name}'... {progress:.2f}% complete")
                     else:
-                        logging.info(f"\rDownloading '{asset_name}'... {downloaded_size / (1024 * 1024):.2f} MB downloaded",
-                              end="")
-            logging.info(f"\nDownload complete: '{asset_name}' saved to current directory.")
+                        logging.debug(f"Downloading '{asset_name}'... {downloaded_size / (1024 * 1024):.2f} MB downloaded")
+            logging.info(f"Downloaded cache: {asset_name}")
             return asset_name
     except requests.exceptions.HTTPError as e:
         logging.error(f"\nError downloading file: {e}")
@@ -95,37 +94,28 @@ def extract_specific_folders_tarfile(file_path, extract_path, folders_to_extract
                     break
 
         if members_to_extract:
-            logging.info(f"Extracting selected members to {extract_path}...")
+            logging.debug(f"Extracting {len(members_to_extract)} members to {extract_path}...")
             tar.extractall(path=extract_path, members=members_to_extract)
             extracted_something = True
-            logging.info("Extraction of specific folders complete.")
         else:
             logging.error(f"No members found matching {folders_to_extract} in the archive.")
 
     return extracted_something
 
 def delete_files():
-    # Delete the "dump" directory if it exists
-    if os.path.isdir('dump'):
-        try:
-            shutil.rmtree('dump')
-            logging.info("Deleted directory: dump")
-        except Exception as e:
-            logging.error(f"Error deleting directory 'dump': {e}")
+    for dirname in ['dump', 'images']:
+        if os.path.isdir(dirname):
+            try:
+                shutil.rmtree(dirname)
+                logging.debug(f"Deleted directory: {dirname}")
+            except Exception as e:
+                logging.error(f"Error deleting directory '{dirname}': {e}")
 
-    if os.path.isdir('images'):
-        try:
-            shutil.rmtree('images')
-            logging.info("Deleted directory: images")
-        except Exception as e:
-            logging.error(f"Error deleting directory 'images': {e}")
-
-    # Delete all files in the current directory
     for filename in os.listdir('.'):
         if filename.endswith('.tar.gz'):
             try:
                 os.remove(filename)
-                logging.info(f"Deleted file: {filename}")
+                logging.debug(f"Deleted file: {filename}")
                 break
             except Exception as e:
                 logging.error(f"Error deleting file {filename}: {e}")
