@@ -158,7 +158,7 @@ def populate_item_dict() -> dict:
         for item_id, item_name in json_data.items():
             item_names_dict[int(item_id)] = item_name
 
-        logging.info(f"Item names dictionary populated with {len(item_names_dict)} items.")
+        logging.debug(f"Item names dictionary populated with {len(item_names_dict)} items.")
 
     except requests.exceptions.HTTPError as e:
         logging.error(f"HTTP error occurred: {e} - Status code: {response.status_code}")
