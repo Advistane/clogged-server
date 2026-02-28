@@ -122,7 +122,7 @@ def upsert_subcategory_items(conn, subcategory_id: int, items: list):
                         cur.execute(update_sql, (public_url, subcategory_id, item_id))
                         logging.info(f"Item {item_id} has been updated with image_url: {public_url}")
 
-                print(f"Items with missing image_url: {missing_image_items}")
+                logging.info(f"Items with missing image_url: {missing_image_items}")
                 # Do something with these items (e.g., update image_url or log them)
 
             conn.commit()

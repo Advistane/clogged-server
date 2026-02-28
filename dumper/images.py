@@ -23,7 +23,7 @@ def get_b2_client():
 
 def check_img_exists(file_name):
     try:
-        response = requests.head(get_public_url(file_name))
+        response = requests.head(get_public_url(file_name), timeout=10)
         return response.status_code == 200
     except requests.exceptions.RequestException:
         return False
@@ -38,7 +38,7 @@ def download_image(item_id):
     os.makedirs(os.path.dirname(asset_name), exist_ok=True)
 
     try:
-        response = requests.get(url, stream=True)
+        response = requests.get(url, stream=True, timeout=30)
         response.raise_for_status()  # Raise an error for bad responses
         with open(asset_name, 'wb') as out_file:
             shutil.copyfileobj(response.raw, out_file)
@@ -61,7 +61,7 @@ def download_image(item_id):
     return None
 
 def upload_file(directory, file, b2, b2path=None):
-    file_path = directory + '/' + file
+    file_path = os.path.join(directory, file)
     remote_path = b2path
     if remote_path is None:
         remote_path = file
@@ -74,6 +74,6 @@ def upload_file(directory, file, b2, b2path=None):
         logging.info(f"Uploaded {file} to {remote_path}. {response}")
         return get_public_url(file)
     except ClientError as ce:
-        print('error', ce)
+        logging.error(f"Failed to upload {file} to B2: {ce}")
 
-    return response
+    return None

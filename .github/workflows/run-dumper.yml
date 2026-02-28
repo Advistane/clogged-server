@@ -1,0 +1,44 @@
+name: Run Data Loader
+
+on:
+  schedule:
+    # Every Tuesday at 5:45 AM Central (10:45 UTC)
+    - cron: '45 10 * * 2'
+    # Every Tuesday at 12:00 PM Central (17:00 UTC)
+    - cron: '0 17 * * 2'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  run-dumper:
+    name: Run Data Loader on ${{ github.ref_name == 'main' && 'Production' || 'Staging' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+
+    steps:
+      - name: Run data-loader container
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            APP_DEPLOY_PATH=${{ vars.DEPLOY_PATH }}
+            cd $APP_DEPLOY_PATH
+
+            COMPOSE_FILE_NAME=${{ vars.COMPOSE_FILE_NAME }}
+
+            echo "Starting data-loader..."
+            docker compose -f "${COMPOSE_FILE_NAME}" up -d data-loader
+
+            echo "Waiting for data-loader to finish..."
+            docker compose -f "${COMPOSE_FILE_NAME}" logs -f data-loader
+
+            EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' $(docker compose -f "${COMPOSE_FILE_NAME}" ps -q data-loader))
+
+            if [ "$EXIT_CODE" -ne 0 ]; then
+              echo "Data loader failed with exit code: $EXIT_CODE"
+              exit 1
+            fi
+
+            echo "Data loader completed successfully."

@@ -58,8 +58,9 @@ def get_struct_data(struct_id: int) -> dict:
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
             data = json.load(file)
-            name = data.get('params').get('689')
-            items_enum = data.get('params').get('690')
+            params = data.get('params', {})
+            name = params.get('689')
+            items_enum = params.get('690')
             return {
                 'name': name,
                 'items_enum': items_enum
@@ -95,7 +96,7 @@ def process_enum(enum: dict, category_id: int):
     enum_id = enum['id']
     data = get_enum_data(enum_id)
     if not data:
-        logging.warn(f"No data found for Enum ID: {enum_id}")
+        logging.warning(f"No data found for Enum ID: {enum_id}")
         return []
 
     result = []
@@ -109,13 +110,13 @@ def process_enum(enum: dict, category_id: int):
 def process_struct(struct_id: int, category_id: int):
     struct_data = get_struct_data(struct_id)
     if not struct_data:
-        logging.warn(f"No data found for struct ID: {struct_id}")
+        logging.warning(f"No data found for struct ID: {struct_id}")
         return None
 
     subcategory_name = struct_data.get('name')
     items_enum = struct_data.get('items_enum')
     if not items_enum:
-        logging.warn(f"No items enum found for struct ID: {struct_id}")
+        logging.warning(f"No items enum found for struct ID: {struct_id}")
         return None
 
     return process_items(subcategory_name, struct_id, items_enum, category_id)
@@ -126,8 +127,7 @@ def process_items(subcategory_name: str, subcategory_id: int, items_enum: int, c
     item_ids = [x[1] for x in items]
     final_items = []
 
-    for i in range(len(item_ids)):
-        item_id = item_ids[i]
+    for i, item_id in enumerate(item_ids):
         item_name = item_names_dict.get(item_id, None)
         final_item_id = item_replacements.get(item_id, item_id)
         if item_id in item_replacements:
@@ -152,7 +152,7 @@ def populate_item_dict() -> dict:
     api_endpoint_url = "https://raw.githubusercontent.com/runelite/static.runelite.net/refs/heads/gh-pages/cache/item/names.json"
 
     try:
-        response = requests.get(api_endpoint_url)
+        response = requests.get(api_endpoint_url, timeout=30)
         response.raise_for_status()
         json_data = response.json()
         for item_id, item_name in json_data.items():

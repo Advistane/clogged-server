@@ -15,6 +15,11 @@
 		case "barrows":
 			return "Barrows Chests";
 
+		case "cow":
+		case "cow boss":
+		case "bull":
+			return "Brutus";
+
 		case "byro":
 			return "Bryophyta";
 
@@ -178,6 +183,12 @@
 		case "scurius":
 		case "rat":
 			return "Scurrius";
+
+		case "shellbane":
+		case "shelly":
+		case "gryphon":
+		case "gryph":
+			return "Shellbane Gryphon";
 
 		case "skotizos":
 		case "totems":

@@ -1,5 +1,6 @@
 ﻿import logging
 import os
+import shutil
 import tarfile
 
 import requests
@@ -10,7 +11,7 @@ GITHUB_RELEASE_ENDPOINT = "https://api.github.com/repos/abextm/osrs-cache/releas
 def download_latest_cache():
     try:
         logging.info(f"Fetching latest release information from {GITHUB_RELEASE_ENDPOINT}...")
-        response = requests.get(GITHUB_RELEASE_ENDPOINT)
+        response = requests.get(GITHUB_RELEASE_ENDPOINT, timeout=30)
         response.raise_for_status()  # Raise an exception for HTTP errors (4xx or 5xx)
     except requests.exceptions.HTTPError as e:
         if response.status_code == 404:
@@ -45,7 +46,7 @@ def download_latest_cache():
     logging.info(f"Downloading from: {download_url}")
 
     try:
-        with requests.get(download_url, stream=True) as r:
+        with requests.get(download_url, stream=True, timeout=120) as r:
             r.raise_for_status()
             total_size = int(r.headers.get('content-length', 0))
             downloaded_size = 0
@@ -102,8 +103,6 @@ def extract_specific_folders_tarfile(file_path, extract_path, folders_to_extract
             logging.error(f"No members found matching {folders_to_extract} in the archive.")
 
     return extracted_something
-
-import shutil
 
 def delete_files():
     # Delete the "dump" directory if it exists

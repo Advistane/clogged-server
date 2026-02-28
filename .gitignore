@@ -1,7 +1,11 @@
 ﻿/dumper/.venv/
+__pycache__/
 .idea/
+.vscode/
 .node_modules/
 /server/node_modules/
 */node_modules
 /.env
 /client/.vite/*
+dist/
+*.log
