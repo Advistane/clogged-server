@@ -244,7 +244,8 @@ export const createUserRouter = (pool: Pool) => {
 	router.get('/:username', async (req, res): Promise<any> => {
 		const log = req.log;
 		const username: string = decodeURIComponent(req.params.username);
-		log.info({username}, 'Fetching collection log data request');
+		const requestedGameMode: string = (req.query.gameMode as string) || 'STANDARD';
+		log.info({username, requestedGameMode}, 'Fetching collection log data request');
 		if (!username) {
 			res.status(400).send('Invalid username');
 			return;
@@ -252,53 +253,55 @@ export const createUserRouter = (pool: Pool) => {
 
 		const client = await pool.connect();
 		try {
-			const userExistsQuery = `
-                SELECT 1
-                FROM players
-                WHERE username ILIKE $1
-                  AND profile_visible_on_website = true;
+			const profilesQuery = `
+                SELECT p.username, pr.id AS profile_id, pr.game_mode
+                FROM players p
+                         JOIN profiles pr ON pr.player_id = p.id
+                WHERE p.username ILIKE $1
+                  AND p.profile_visible_on_website = true
+                ORDER BY pr.id;
 			`;
-			const userExistsResult = await client.query(userExistsQuery, [username]);
+			const profilesResult = await client.query(profilesQuery, [username]);
 
-			if (userExistsResult.rowCount === 0) {
-				log.warn({username}, 'Username not found or profile not visible.');
+			if (profilesResult.rowCount === 0) {
+				log.warn({username}, 'Username not found, profile not visible, or no game mode profiles exist.');
 				res.status(404).send('Username not found or profile not visible.');
 				return;
 			}
 
+			const availableGameModes: string[] = profilesResult.rows.map(row => row.game_mode);
+			// Fall back to the player's first profile if the requested mode doesn't exist for them
+			const selectedProfile = profilesResult.rows.find(row => row.game_mode === requestedGameMode)
+				|| profilesResult.rows[0];
+			const profileId = selectedProfile.profile_id;
+			const gameMode: string = selectedProfile.game_mode;
+			const playerUsername: string = selectedProfile.username;
+
+			log.debug({username, gameMode, profileId, availableGameModes}, 'Resolved profile for website lookup');
+
 			const metadataQuery = `
-                WITH player_acc AS (
-                    -- Step 1: Get the accounthash for the target player
-                    SELECT id
-                    FROM players
-                    WHERE username ILIKE $1
-                      AND profile_visible_on_website = true),
-                     all_items AS (
-                         -- Step 2: Collect all items for each subcategory
-                         SELECT si.id,
-                                si.itemid,
-                                si.originalitemid,
-                                si.subcategoryid,
-                                si.image_url,
-                                si.itemname,
-                                s.categoryid,
-                                s.name AS subcategory_name,
-                                c.name AS category_name
-                         FROM subcategory_items si
-                                  JOIN subcategories s ON s.id = si.subcategoryid
-                                  JOIN categories c ON c.id = s.categoryid
-                         ORDER BY si.id),
-                     player_items AS (
-                         -- Step 3: Collect items owned by the player
+                WITH all_items AS (
+                    -- Step 1: Collect all items for each subcategory
+                    SELECT si.id,
+                           si.itemid,
+                           si.originalitemid,
+                           si.subcategoryid,
+                           si.image_url,
+                           si.itemname,
+                           s.categoryid,
+                           s.name AS subcategory_name,
+                           c.name AS category_name
+                    FROM subcategory_items si
+                             JOIN subcategories s ON s.id = si.subcategoryid
+                             JOIN categories c ON c.id = s.categoryid),
+                     owned_items AS (
+                         -- Step 2: Collect items owned by the selected profile (one row per item)
                          SELECT pi.itemid,
-                                pi.quantity,
-                                si.subcategoryid
-                         FROM player_acc pa
-                                  JOIN player_items pi ON pi.playerid = pa.id
-                                  JOIN subcategory_items si ON si.itemid = pi.itemid
-                         ORDER BY si.id),
+                                pi.quantity
+                         FROM player_items pi
+                         WHERE pi.profile_id = $1),
                      items_by_subcategory AS (
-                         -- Step 4: Aggregate both owned and missing items for each subcategory
+                         -- Step 3: Aggregate both owned and missing items for each subcategory
                          SELECT ai.subcategoryid,
                                 ai.subcategory_name,
                                 ai.categoryid,
@@ -306,21 +309,21 @@ export const createUserRouter = (pool: Pool) => {
                                 json_agg(
                                         json_build_object(
                                                 'item_id', ai.originalitemid,
-                                                'quantity', COALESCE(pi.quantity, 0), -- 0 for missing items
+                                                'quantity', COALESCE(oi.quantity, 0), -- 0 for missing items
                                                 'image_url', ai.image_url,
                                                 'item_name', ai.itemname,
-                                                'owned', CASE WHEN pi.itemid IS NOT NULL THEN true ELSE false END
-                                        ) ORDER BY (COALESCE(pi.quantity, 0) > 0) DESC, ai.id
-                                )                                           AS items_json,
-                                COUNT(CASE WHEN pi.quantity > 0 THEN 1 END) as owned_items_count,
-                                COALESCE(MAX(pkc.kc), 0)                    AS kc -- Include player_kc.kc
+                                                'owned', oi.itemid IS NOT NULL
+                                        ) ORDER BY (oi.itemid IS NOT NULL) DESC, ai.id
+                                )                        AS items_json,
+                                COUNT(oi.itemid)         AS owned_items_count,
+                                COALESCE(MAX(pkc.kc), 0) AS kc -- Include player_kc.kc
                          FROM all_items ai
-                                  LEFT JOIN player_items pi ON ai.itemid = pi.itemid
+                                  LEFT JOIN owned_items oi ON ai.itemid = oi.itemid
                                   LEFT JOIN player_kc pkc ON pkc.subcategoryid = ai.subcategoryid
-                             AND pkc.playerid = (SELECT player_acc.id FROM player_acc)
+                             AND pkc.profile_id = $1 AND pkc.kc != -1
                          GROUP BY ai.subcategoryid, ai.subcategory_name, ai.categoryid, ai.category_name),
                      subcategories_by_category AS (
-                         -- Step 5: Aggregate subcategories for each category
+                         -- Step 4: Aggregate subcategories for each category
                          SELECT categoryid,
                                 category_name,
                                 json_agg(
@@ -333,7 +336,7 @@ export const createUserRouter = (pool: Pool) => {
                                 ) AS subcategories_json
                          FROM items_by_subcategory
                          GROUP BY categoryid, category_name)
-                -- Step 6: Final aggregation of categories
+                -- Step 5: Final aggregation of categories
                 SELECT json_agg(
                                json_build_object(
                                        'category_name', category_name,
@@ -342,15 +345,18 @@ export const createUserRouter = (pool: Pool) => {
                        ) AS categories
                 FROM subcategories_by_category;
 			`;
-			const metadataResult = await client.query(metadataQuery, [username]);
+			const metadataResult = await client.query(metadataQuery, [profileId]);
 
 			if (metadataResult.rows.length === 0 || !metadataResult.rows[0].categories) {
-				log.warn({username}, 'No data found for the user.');
+				log.warn({username, gameMode}, 'No data found for the user.');
 				res.status(404).send('No data found for the user.');
 				return;
 			}
 
 			const response = {
+				username: playerUsername,
+				gameMode,
+				availableGameModes,
 				categories: metadataResult.rows[0].categories,
 			};
 
