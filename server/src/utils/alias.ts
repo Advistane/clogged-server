@@ -140,6 +140,10 @@
 		case "lev":
 			return "The Leviathan";
 
+		case "mad angel":
+		case "angel":
+			return "The Mad Angel";
+
 		case "moons":
 			return "Moons of Peril";
 
