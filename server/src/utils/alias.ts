@@ -76,6 +76,12 @@
 		case "fortis":
 			return "Fortis Colosseum";
 
+		case "fred":
+		case "fracture":
+		case "tfa":
+		case "the fractured but whole":
+			return "The Fractured Archive"
+
 		case "gaunt":
 		case "gauntlet":
 		case "cgaunt":

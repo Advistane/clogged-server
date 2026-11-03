@@ -21,6 +21,13 @@ interface CollectionLogItemOutput {
 	quantity: number;
 }
 
+// The game mode a player last reported from their own client when sending a !clog lookup
+const ACTIVE_GAME_MODE_TTL_SECONDS = 24 * 60 * 60;
+// RuneLite RuneScapeProfileType names, e.g. STANDARD, DEADMAN, DEMONIC_PACTS_LEAGUE
+const GAME_MODE_PATTERN = /^[A-Z_]{1,64}$/;
+
+const activeGameModeKey = (username: string) => `active-game-mode:${username.toLowerCase()}`;
+
 export const createUserRouter = (pool: Pool) => {
 	const router = Router();
 
@@ -74,6 +81,35 @@ export const createUserRouter = (pool: Pool) => {
 		}
 	});
 
+	// Store the game mode a player is currently on, so other players' clients look up the right profile
+	router.put('/active-game-mode', async (req, res): Promise<any> => {
+		const log = req.log;
+		const {accountHash, gameMode} = req.body ?? {};
+
+		if (!accountHash || typeof gameMode !== 'string' || !GAME_MODE_PATTERN.test(gameMode)) {
+			log.warn({accountHash, gameMode}, 'Invalid active game mode request');
+			return res.status(400).send('Invalid request body. accountHash and a valid gameMode are required.');
+		}
+
+		try {
+			// Key on the username stored for this account hash, so a client can only set its own player's mode
+			const playerResult = await pool.query('SELECT username FROM players WHERE accounthash = $1;', [accountHash]);
+			if (playerResult.rowCount === 0 || !playerResult.rows[0].username) {
+				log.debug({accountHash}, 'Active game mode reported for unknown player');
+				return res.status(404).send('Player not found.');
+			}
+
+			const username: string = playerResult.rows[0].username;
+			await redisConnection.set(activeGameModeKey(username), gameMode, 'EX', ACTIVE_GAME_MODE_TTL_SECONDS);
+			log.info({username, gameMode}, 'Stored active game mode');
+
+			return res.sendStatus(204);
+		} catch (err) {
+			log.error(err, 'Failed to store active game mode');
+			return res.status(500).send('Server error');
+		}
+	});
+
 	router.get('/:username/:subcategoryName', async (req, res): Promise<any> => {
 		const log = req.log;
 
@@ -81,7 +117,8 @@ export const createUserRouter = (pool: Pool) => {
 		const subcategoryName: string = req.params.subcategoryName;
 		const mode: string = (req.query.mode as string) || 'owned';
 		const otherLookup: boolean = (req.query.other as string) === 'true';
-		const gameMode: string = (req.query.gameMode as string) || 'STANDARD';
+		const useActiveGameMode: boolean = (req.query.useActiveGameMode as string) === 'true';
+		let gameMode: string = (req.query.gameMode as string) || 'STANDARD';
 
 		if (mode !== 'owned' && mode !== 'missing') {
 			log.warn({username, mode}, 'Invalid mode parameter');
@@ -95,6 +132,19 @@ export const createUserRouter = (pool: Pool) => {
 		if (!username || !subcategoryAliased) {
 			res.status(400).send('Invalid username or subcategory name');
 			return;
+		}
+
+		// Prefer the game mode the player reported from their own client, over what the requesting client detected
+		if (useActiveGameMode) {
+			try {
+				const activeGameMode = await redisConnection.get(activeGameModeKey(username));
+				if (activeGameMode) {
+					log.debug({username, requestedGameMode: gameMode, activeGameMode}, 'Using active game mode');
+					gameMode = activeGameMode;
+				}
+			} catch (redisError) {
+				log.error({username, redisError}, 'Failed to read active game mode, using requested game mode');
+			}
 		}
 
 		// Check cache first
@@ -122,6 +172,7 @@ export const createUserRouter = (pool: Pool) => {
 			let finalMetadataQuery = `
                 SELECT p.username          AS player_username,
                        pr.id               AS profile_id, -- This is the new ID we need
+                       pr.game_mode        AS game_mode,
                        s.id                AS subcategory_id,
                        s.name              AS validated_subcategory_name,
                        s.total             AS total,
@@ -131,14 +182,20 @@ export const createUserRouter = (pool: Pool) => {
                          JOIN subcategories s ON s.name = $2
                          LEFT JOIN player_kc pkc ON pkc.profile_id = pr.id AND pkc.subcategoryId = s.id AND pkc.kc != -1
                 WHERE p.username ILIKE $1
-                AND pr.game_mode = $3
 			`;
 
 			if (otherLookup) {
 				finalMetadataQuery += ' AND p.profile_visible_on_website = true';
 			}
 
-			finalMetadataQuery += ';';
+			// Failsafe: if the player has no profile for the requested game mode, fall back to their STANDARD
+			// profile, then to their newest profile
+			finalMetadataQuery += `
+                ORDER BY (pr.game_mode = $3) DESC,
+                         (pr.game_mode = 'STANDARD') DESC,
+                         pr.created_at DESC
+                LIMIT 1;
+			`;
 
 			const metadataResult = await client.query(finalMetadataQuery, [username, subcategoryAliased, gameMode]);
 
@@ -161,6 +218,7 @@ export const createUserRouter = (pool: Pool) => {
 
 			const {
 				profile_id: profileId,
+				game_mode: resolvedGameMode,
 				player_username: playerUsername,
 				subcategory_id: subcategoryId,
 				validated_subcategory_name: validatedSubcategoryName,
@@ -172,6 +230,8 @@ export const createUserRouter = (pool: Pool) => {
 				username,
 				subcategoryAliased,
 				profileId,
+				requestedGameMode: gameMode,
+				resolvedGameMode,
 				subcategoryId,
 				validatedSubcategoryName,
 				total,
@@ -215,6 +275,7 @@ export const createUserRouter = (pool: Pool) => {
 
 			const response = {
 				username: playerUsername,
+				gameMode: resolvedGameMode,
 				kc: Number(kc),
 				subcategoryName: validatedSubcategoryName,
 				total: Number(total),
