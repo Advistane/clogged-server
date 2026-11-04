@@ -636,7 +636,8 @@ export function getKCLookupAliases() {
 		"fortis colosseum": "Sol Heredit",
 
 		"the inferno": "TzKal-Zuk",
-		"the fight caves": "TzTok-Jad"
+		"the fight caves": "TzTok-Jad",
+		"the fractured archive": "Fractured Archive"
 	}
 
 	return Object.entries(aliases).map(([alias, fullName]) => ({
